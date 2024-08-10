@@ -1,18 +1,48 @@
 #include "sampling.h"
 
-#include <random>
+#include "common.h"
 
-struct llama_sampling_context * llama_sampling_init(const struct llama_sampling_params & params, const struct llama_model * model) {
+struct llama_sampling_context * llama_sampling_init(const struct gpt_sampling_params & params, const struct llama_model * model) {
     struct llama_sampling_context * result = new llama_sampling_context();
 
     result->params = params;
-    result->smpl   = llama_sampling_init(model, params.grammar.c_str(), "root");
+
+    {
+        auto lp = llama_sampling_default_params();
+
+        lp.seed              = params.seed;
+        lp.n_prev            = params.n_prev;
+        lp.n_probs           = params.n_probs;
+        lp.min_keep          = params.min_keep;
+        lp.top_k             = params.top_k;
+        lp.top_p             = params.top_p;
+        lp.min_p             = params.min_p;
+        lp.tfs_z             = params.tfs_z;
+        lp.typical_p         = params.typical_p;
+        lp.temp              = params.temp;
+        lp.dynatemp_range    = params.dynatemp_range;
+        lp.dynatemp_exponent = params.dynatemp_exponent;
+        lp.penalty_last_n    = params.penalty_last_n;
+        lp.penalty_repeat    = params.penalty_repeat;
+        lp.penalty_freq      = params.penalty_freq;
+        lp.penalty_present   = params.penalty_present;
+        lp.mirostat          = params.mirostat;
+        lp.mirostat_tau      = params.mirostat_tau;
+        lp.mirostat_eta      = params.mirostat_eta;
+        lp.penalize_nl       = params.penalize_nl;
+        lp.ignore_eos        = params.ignore_eos;
+
+        result->smpl = llama_sampling_init(model, lp);
+
+        llama_sampling_set_rng_seed  (result->smpl, params.seed);
+        llama_sampling_set_grammar   (result->smpl, params.grammar.c_str(), "root");
+        llama_sampling_set_cfg       (result->smpl, params.cfg_negative_prompt.c_str(), params.cfg_scale);
+        llama_sampling_set_logit_bias(result->smpl, params.logit_bias.size(), params.logit_bias.data());
+    }
 
     result->prev.resize(params.n_prev);
 
     result->n_valid = 0;
-
-    llama_sampling_set_rng_seed(result->smpl, params.seed);
 
     return result;
 }
@@ -24,7 +54,7 @@ void llama_sampling_free(struct llama_sampling_context * ctx) {
 }
 
 void llama_sampling_reset(llama_sampling_context * ctx) {
-    llama_sampling_reset(ctx->smpl, ctx->params.grammar.c_str(), "root");
+    llama_sampling_reset(ctx->smpl);
 
     std::fill(ctx->prev.begin(), ctx->prev.end(), 0);
     ctx->cur.clear();
@@ -58,7 +88,7 @@ std::string llama_sampling_prev_str(llama_sampling_context * ctx_sampling, llama
     return result;
 }
 
-std::string llama_sampling_print(const llama_sampling_params & params) {
+std::string llama_sampling_print(const gpt_sampling_params & params) {
     char result[1024];
 
     snprintf(result, sizeof(result),
@@ -72,7 +102,7 @@ std::string llama_sampling_print(const llama_sampling_params & params) {
     return std::string(result);
 }
 
-std::string llama_sampling_order_print(const llama_sampling_params & params) {
+std::string llama_sampling_order_print(const gpt_sampling_params & params) {
     std::string result = "CFG -> Penalties ";
     if (params.mirostat == 0) {
         for (auto sampler_type : params.samplers_sequence) {
@@ -176,7 +206,7 @@ static void sampler_queue(
                                  size_t   min_keep) {
     llama_sampling * smpl = ctx_sampling->smpl;
 
-    const llama_sampling_params & params = ctx_sampling->params;
+    const gpt_sampling_params & params = ctx_sampling->params;
 
     const float         temp              = params.temp;
     const float         dynatemp_range    = params.dynatemp_range;
@@ -217,7 +247,7 @@ static llama_token llama_sampling_sample_impl(
                   bool is_resampling) {
     llama_sampling * smpl = ctx_sampling->smpl;
 
-    const llama_sampling_params & params = ctx_sampling->params;
+    const gpt_sampling_params & params = ctx_sampling->params;
 
     const float temp         = params.temp;
     const int   mirostat     = params.mirostat;
@@ -308,7 +338,7 @@ static llama_token_data_array llama_sampling_prepare_impl(
                   std::vector<float> * original_logits) {
     llama_sampling * smpl = ctx_sampling->smpl;
 
-    const llama_sampling_params & params = ctx_sampling->params;
+    const gpt_sampling_params & params = ctx_sampling->params;
 
     const int n_vocab = llama_n_vocab(llama_get_model(ctx_main));
 
@@ -332,13 +362,17 @@ static llama_token_data_array llama_sampling_prepare_impl(
     }
 
     // apply params.logit_bias map
-    for (auto it = params.logit_bias.begin(); it != params.logit_bias.end(); it++) {
-        logits[it->first] += it->second;
+    for (const auto & logit_bias : params.logit_bias) {
+        logits[logit_bias.token] += logit_bias.bias;
+    }
+
+    if (params.ignore_eos) {
+        logits[llama_token_eos(llama_get_model(ctx_main))] = -INFINITY;
     }
 
     if (ctx_cfg) {
         float * logits_guidance = llama_get_logits_ith(ctx_cfg, idx);
-        llama_sampling_apply_guidance(smpl, logits, logits_guidance, params.cfg_scale);
+        llama_sampling_cfg(smpl, logits, logits_guidance, params.cfg_scale);
     }
 
     cur.resize(n_vocab);
@@ -350,7 +384,7 @@ static llama_token_data_array llama_sampling_prepare_impl(
     llama_token_data_array cur_p = { cur.data(), cur.size(), false };
 
     // apply penalties
-    const auto& penalty_tokens = params.use_penalty_prompt_tokens ? params.penalty_prompt_tokens : prev;
+    const auto & penalty_tokens = prev;
     const int penalty_tokens_used_size = std::min((int)penalty_tokens.size(), penalty_last_n);
     if (penalty_tokens_used_size) {
         const float nl_logit = logits[llama_token_nl(llama_get_model(ctx_main))];

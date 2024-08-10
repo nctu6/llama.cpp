@@ -17408,6 +17408,34 @@ struct llama_model_quantize_params llama_model_quantize_default_params() {
     return result;
 }
 
+struct llama_sampling_params llama_sampling_default_params() {
+    struct llama_sampling_params result = {
+        /*.seed              =*/ LLAMA_DEFAULT_SEED,
+        /*.n_prev            =*/ 64,
+        /*.n_probs           =*/ 0,
+        /*.min_keep          =*/ 0,
+        /*.top_k             =*/ 40,
+        /*.top_p             =*/ 0.95f,
+        /*.min_p             =*/ 0.05f,
+        /*.tfs_z             =*/ 1.00f,
+        /*.typical_p         =*/ 1.00f,
+        /*.temp              =*/ 0.80f,
+        /*.dynatemp_range    =*/ 0.00f,
+        /*.dynatemp_exponent =*/ 1.00f,
+        /*.penalty_last_n    =*/ 64,
+        /*.penalty_repeat    =*/ 1.00f,
+        /*.penalty_freq      =*/ 0.00f,
+        /*.penalty_present   =*/ 0.00f,
+        /*.mirostat          =*/ 0,
+        /*.mirostat_tau      =*/ 5.00f,
+        /*.mirostat_eta      =*/ 0.10f,
+        /*.penalize_nl       =*/ false,
+        /*.ignore_eos        =*/ false,
+    };
+
+    return result;
+}
+
 size_t llama_max_devices(void) {
 #if defined(GGML_USE_RPC)
     return GGML_RPC_MAX_SERVERS;
@@ -17643,7 +17671,7 @@ struct llama_context * llama_new_context_with_model(
     ctx->logits_all = params.logits_all;
 
     // build worst-case graph for encoder if a model contains encoder
-    ctx->is_encoding  = llama_model_has_encoder(model);
+    ctx->is_encoding = llama_model_has_encoder(model);
 
     uint32_t kv_size = cparams.n_ctx;
     ggml_type type_k = params.type_k;
@@ -20034,8 +20062,8 @@ int32_t llama_chat_apply_template(
 // sampling
 //
 
-struct llama_sampling * llama_sampling_init(const struct llama_model * model, const char * grammar_str, const char * grammar_root) {
-    return llama_sampling_init_impl(model->vocab, grammar_str, grammar_root);
+struct llama_sampling * llama_sampling_init(const struct llama_model * model, struct llama_sampling_params params) {
+    return llama_sampling_init_impl(model->vocab, params);
 }
 
 void llama_sampling_free(struct llama_sampling * smpl) {
@@ -20050,12 +20078,24 @@ struct llama_sampling * llama_sampling_cp(const struct llama_sampling * smpl) {
     return llama_sampling_cp_impl(*smpl);
 }
 
-void llama_sampling_reset(struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root) {
-    llama_sampling_reset_impl(*smpl, grammar_str, grammar_root);
+void llama_sampling_reset(struct llama_sampling * smpl) {
+    llama_sampling_reset_impl(*smpl);
 }
 
 void llama_sampling_set_rng_seed(struct llama_sampling * smpl, uint32_t seed) {
     llama_sampling_set_rng_seed_impl(*smpl, seed);
+}
+
+void llama_sampling_set_grammar(struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root) {
+    llama_sampling_set_grammar_impl(*smpl, grammar_str, grammar_root);
+}
+
+void llama_sampling_set_cfg(struct llama_sampling * smpl, const char * cfg_prompt, float cfg_scale) {
+    llama_sampling_set_cfg_impl(*smpl, cfg_prompt, cfg_scale);
+}
+
+void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit_bias, const llama_logit_bias * logit_bias) {
+    llama_sampling_set_logit_bias_impl(*smpl, n_logit_bias, logit_bias);
 }
 
 void llama_sampling_softmax(struct llama_sampling * smpl, llama_token_data_array * candidates) {
@@ -20127,7 +20167,7 @@ void llama_sampling_repetition_penalties(
     llama_sampling_repetition_penalties_impl(*smpl, candidates, last_tokens, penalty_last_n, penalty_repeat, penalty_freq, penalty_present);
 }
 
-void llama_sampling_apply_guidance(
+void llama_sampling_cfg(
         struct llama_sampling * smpl,
                         float * logits,
                         float * logits_guidance,

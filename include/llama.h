@@ -56,6 +56,7 @@ extern "C" {
     // struct llama_vocab; // TODO: add in the future
     struct llama_model;
     struct llama_context;
+    struct llama_sampling;
 
     typedef int32_t llama_pos;
     typedef int32_t llama_token;
@@ -327,7 +328,8 @@ extern "C" {
         enum ggml_type type_k; // data type for K cache [EXPERIMENTAL]
         enum ggml_type type_v; // data type for V cache [EXPERIMENTAL]
 
-        // Keep the booleans together to avoid misalignment during copy-by-value.
+        // Keep the booleans together and at the end of the struct to avoid misalignment during copy-by-value.
+        // TODO: move at the end of the struct
         bool logits_all;  // the llama_decode() call computes all logits, not just the last one (DEPRECATED - set llama_batch.logits instead)
         bool embeddings;  // if true, extract embeddings (together with logits)
         bool offload_kqv; // whether to offload the KQV ops (including the KV cache) to GPU
@@ -355,8 +357,37 @@ extern "C" {
         void * kv_overrides;                 // pointer to vector containing overrides
     } llama_model_quantize_params;
 
-    // sampling types
-    struct llama_sampling;
+    typedef struct llama_logit_bias {
+        llama_token token;
+        float bias;
+    } llama_logit_bias;
+
+    // parameters for sampling the logits
+    typedef struct llama_sampling_params {
+        uint32_t seed;              // the seed used to initialize llama_sampling_context
+        int32_t  n_prev;            // number of previous tokens to remember
+        int32_t  n_probs;           // if greater than 0, output the probabilities of top n_probs tokens.
+        int32_t  min_keep;          // 0 = disabled, otherwise samplers should return at least min_keep tokens
+        int32_t  top_k;             // <= 0 to use vocab size
+        float    top_p;             // 1.0 = disabled
+        float    min_p;             // 0.0 = disabled
+        float    tfs_z;             // 1.0 = disabled
+        float    typical_p;         // 1.0 = disabled
+        float    temp;              // <= 0.0 to sample greedily, 0.0 to not output probabilities
+        float    dynatemp_range;    // 0.0 = disabled
+        float    dynatemp_exponent; // controls how entropy maps to temperature in dynamic temperature sampler
+        int32_t  penalty_last_n;    // last n tokens to penalize (0 = disable penalty, -1 = context size)
+        float    penalty_repeat;    // 1.0 = disabled
+        float    penalty_freq;      // 0.0 = disabled
+        float    penalty_present;   // 0.0 = disabled
+        int32_t  mirostat;          // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
+        float    mirostat_tau;      // target entropy
+        float    mirostat_eta;      // learning rate
+
+        // Keep the booleans together and at the end of the struct to avoid misalignment during copy-by-value.
+        bool penalize_nl; // consider newlines as a repeatable token
+        bool ignore_eos;  // ignore the end-of-sequence token
+    } llama_sampling_params;
 
     // performance timing information
     struct llama_timings {
@@ -385,9 +416,10 @@ extern "C" {
     struct llama_lora_adapter;
 
     // Helpers for getting default parameters
-    LLAMA_API struct llama_model_params llama_model_default_params(void);
-    LLAMA_API struct llama_context_params llama_context_default_params(void);
+    LLAMA_API struct llama_model_params          llama_model_default_params(void);
+    LLAMA_API struct llama_context_params        llama_context_default_params(void);
     LLAMA_API struct llama_model_quantize_params llama_model_quantize_default_params(void);
+    LLAMA_API struct llama_sampling_params       llama_sampling_default_params(void);
 
     // Initialize the llama + ggml backend
     // If numa is true, use NUMA optimizations
@@ -971,18 +1003,21 @@ extern "C" {
     // Sampling functions
     //
 
-    // TODO: args become llama_sampling_params
     // TODO: llama_model should become llama_vocab
-    LLAMA_API struct llama_sampling * llama_sampling_init(const struct llama_model * model, const char * grammar_str, const char * grammar_root);
+    LLAMA_API struct llama_sampling * llama_sampling_init(const struct llama_model * model, struct llama_sampling_params params);
 
     LLAMA_API void llama_sampling_free(struct llama_sampling * smpl);
 
     LLAMA_API struct llama_sampling * llama_sampling_cp(const struct llama_sampling * smpl);
 
-    LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root);
+    //LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root);
+    LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl);
 
     // Sets the current rng seed.
-    LLAMA_API void llama_sampling_set_rng_seed(struct llama_sampling * smpl, uint32_t seed);
+    LLAMA_API void llama_sampling_set_rng_seed  (struct llama_sampling * smpl, uint32_t seed);
+    LLAMA_API void llama_sampling_set_grammar   (struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root);
+    LLAMA_API void llama_sampling_set_cfg       (struct llama_sampling * smpl, const char * cfg_prompt, float cfg_scale);
+    LLAMA_API void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit_bias, const llama_logit_bias * logit_bias);
 
     /// @details Sorts candidate tokens by their logits in descending order and calculate probabilities based on logits.
     LLAMA_API void llama_sampling_softmax(
@@ -1057,7 +1092,7 @@ extern "C" {
     /// @param logits Logits extracted from the original generation context.
     /// @param logits_guidance Logits extracted from a separate context from the same model. Other than a negative prompt at the beginning, it should have all generated and user input tokens copied from the main context.
     /// @param scale Guidance strength. 1.0f means no guidance. Higher values mean stronger guidance.
-    LLAMA_API void llama_sampling_apply_guidance(
+    LLAMA_API void llama_sampling_cfg(
             struct llama_sampling * smpl,
                             float * logits,
                             float * logits_guidance,
