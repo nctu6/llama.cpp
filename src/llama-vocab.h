@@ -62,8 +62,6 @@ struct llama_vocab {
     std::vector<char> precompiled_charsmap;
 
     int find_bpe_rank(const std::string & token_left, const std::string & token_right) const;
-
-    static llama_vocab for_tests(uint32_t n_vocab);
 };
 
 //

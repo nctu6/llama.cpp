@@ -50,7 +50,12 @@ defer {
     llama_free(context)
 }
 
-let smpl = llama_sampling_init(model, llama_sampling_default_params())
+var sparams = llama_sampling_params()
+sparams.top_k = 40
+sparams.top_p = 0.9
+sparams.temp  = 0.4
+
+let smpl = llama_sampling_init(model, sparams)
 guard smpl != nil else {
     print("Failed to initialize sampling")
     exit(1)
@@ -146,13 +151,9 @@ while n_cur <= n_len {
             sorted: false
         )
 
-        let top_k: Int32 = 40
-        let top_p: Float = 0.9
-        let temp: Float = 0.4
-
-        llama_sampling_top_k(smpl, &candidates_p, top_k, 1)
-        llama_sampling_top_p(smpl, &candidates_p, top_p, 1)
-        llama_sampling_temp(smpl, &candidates_p, temp)
+        llama_sampling_top_k(smpl, &candidates_p)
+        llama_sampling_top_p(smpl, &candidates_p)
+        llama_sampling_temp (smpl, &candidates_p)
 
         let new_token_id = llama_sampling_sample(smpl, &candidates_p)
 

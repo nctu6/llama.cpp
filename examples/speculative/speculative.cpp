@@ -181,7 +181,6 @@ int main(int argc, char ** argv) {
     // draft sequence data
     std::vector<seq_draft> drafts(n_seq_dft);
 
-    params.sparams.grammar.clear(); // the draft samplers will copy the target sampler's grammar
     if (params.sparams.temp == 0) {
         params.sparams.temp = -1.0f; // force greedy sampling with probs for the draft model
     }
@@ -231,7 +230,8 @@ int main(int argc, char ** argv) {
                 if (params.sparams.temp > 0) {
                     // stochastic verification
 
-                    llama_token_data_array dist_tgt = llama_sampling_prepare(ctx_sampling, ctx_tgt, NULL, drafts[s_keep].i_batch_tgt[i_dft], true, NULL);
+                    llama_token_data_array dist_tgt = llama_sampling_prepare(ctx_sampling, ctx_tgt, NULL, drafts[s_keep].i_batch_tgt[i_dft]);
+                    llama_sampling_grammar(ctx_sampling->smpl, &dist_tgt);
                     llama_sampling_softmax(ctx_sampling->smpl, &dist_tgt);
 
                     float p_tgt = 0.0f;

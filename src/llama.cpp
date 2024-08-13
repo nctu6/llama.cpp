@@ -17429,6 +17429,7 @@ struct llama_sampling_params llama_sampling_default_params() {
         /*.mirostat          =*/ 0,
         /*.mirostat_tau      =*/ 5.00f,
         /*.mirostat_eta      =*/ 0.10f,
+        /*.cfg_scale         =*/ 1.00f,
         /*.penalize_nl       =*/ false,
         /*.ignore_eos        =*/ false,
     };
@@ -20090,10 +20091,6 @@ void llama_sampling_set_grammar(struct llama_sampling * smpl, const char * gramm
     llama_sampling_set_grammar_impl(*smpl, grammar_str, grammar_root);
 }
 
-void llama_sampling_set_cfg(struct llama_sampling * smpl, const char * cfg_prompt, float cfg_scale) {
-    llama_sampling_set_cfg_impl(*smpl, cfg_prompt, cfg_scale);
-}
-
 void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit_bias, const llama_logit_bias * logit_bias) {
     llama_sampling_set_logit_bias_impl(*smpl, n_logit_bias, logit_bias);
 }
@@ -20101,96 +20098,119 @@ void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit
 void llama_sampling_softmax(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_softmax_impl(*smpl, candidates);
+    llama_sampling_softmax_impl(candidates);
 }
 
-void llama_sampling_top_k(struct llama_sampling * smpl, llama_token_data_array * candidates, int32_t k, size_t min_keep) {
+void llama_sampling_top_k(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_top_k_impl(*smpl, candidates, k, min_keep);
+    llama_sampling_top_k_impl(candidates, smpl->params.top_k, smpl->params.min_keep);
 }
 
-void llama_sampling_top_p(struct llama_sampling * smpl, llama_token_data_array * candidates, float p, size_t min_keep) {
+void llama_sampling_top_p(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_top_p_impl(*smpl, candidates, p, min_keep);
+    llama_sampling_top_p_impl(candidates, smpl->params.top_p, smpl->params.min_keep);
 }
 
-void llama_sampling_min_p(struct llama_sampling * smpl, llama_token_data_array * candidates, float p, size_t min_keep) {
+void llama_sampling_min_p(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_min_p_impl(*smpl, candidates, p, min_keep);
+    llama_sampling_min_p_impl(candidates, smpl->params.min_p, smpl->params.min_keep);
 }
 
-void llama_sampling_tail_free(struct llama_sampling * smpl, llama_token_data_array * candidates, float z, size_t min_keep) {
+void llama_sampling_tail_free(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_tail_free_impl(*smpl, candidates, z, min_keep);
+    llama_sampling_tail_free_impl(candidates, smpl->params.tfs_z, smpl->params.min_keep);
 }
 
-void llama_sampling_typical(struct llama_sampling * smpl, llama_token_data_array * candidates, float p, size_t min_keep) {
+void llama_sampling_typical(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_typical_impl(*smpl, candidates, p, min_keep);
+    llama_sampling_typical_impl(candidates, smpl->params.typical_p, smpl->params.min_keep);
 }
 
-void llama_sampling_entropy(struct llama_sampling * smpl, llama_token_data_array * candidates_p, float min_temp, float max_temp, float exponent_val) {
+void llama_sampling_temp(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_entropy_impl(*smpl, candidates_p, min_temp, max_temp, exponent_val);
+    if (smpl->params.dynatemp_range > 0) {
+        const float dynatemp_min = std::max(0.0f, smpl->params.temp - smpl->params.dynatemp_range);
+        const float dynatemp_max = std::max(0.0f, smpl->params.temp + smpl->params.dynatemp_range);
+
+        llama_sampling_entropy_impl(candidates, dynatemp_min, dynatemp_max, smpl->params.dynatemp_exponent);
+    } else {
+        llama_sampling_temp_impl(candidates, smpl->params.temp);
+    }
 }
 
-void llama_sampling_temp(struct llama_sampling * smpl, llama_token_data_array * candidates_p, float temp) {
-    time_meas tm(smpl->t_total_us);
-
-    llama_sampling_temp_impl(*smpl, candidates_p, temp);
-}
-
-void llama_sampling_grammar(
-        struct llama_sampling * smpl,
-       llama_token_data_array * candidates) {
+void llama_sampling_grammar(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us); // TODO: measure grammar time separately from sampling
 
-    llama_sampling_grammar_impl(*smpl, candidates);
+    if (smpl->grammar) {
+        llama_sampling_grammar_impl(candidates, *smpl->grammar);
+    }
 }
 
-void llama_sampling_repetition_penalties(
+void llama_sampling_penalties(
         struct llama_sampling * smpl,
-       llama_token_data_array * candidates,
-            const llama_token * last_tokens,
-                       size_t   penalty_last_n,
-                        float   penalty_repeat,
-                        float   penalty_freq,
-                        float   penalty_present) {
+       llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_repetition_penalties_impl(*smpl, candidates, last_tokens, penalty_last_n, penalty_repeat, penalty_freq, penalty_present);
+    const size_t penalty_last_n = std::min<size_t>(smpl->params.penalty_last_n, smpl->prev.size());
+
+    const float penalty_repeat  = smpl->params.penalty_repeat;
+    const float penalty_freq    = smpl->params.penalty_freq;
+    const float penalty_present = smpl->params.penalty_present;
+
+    if ((penalty_last_n == 0) ||
+        (penalty_repeat == 1.0f && penalty_freq == 0.0f && penalty_present == 0.0f)) {
+        return;
+    }
+
+    // Create a frequency map to count occurrences of each token in last_tokens
+    // TODO: move to sampling state and avoid reallocation
+    llama_token_cnt token_count;
+    for (size_t i = 0; i < penalty_last_n; ++i) {
+        token_count[smpl->prev.rat(i)]++;
+    }
+
+    llama_sampling_penalties_impl(candidates, token_count, penalty_repeat, penalty_freq, penalty_present);
 }
 
 void llama_sampling_cfg(
         struct llama_sampling * smpl,
                         float * logits,
-                        float * logits_guidance,
-                        float   scale) {
+                        float * logits_guidance) {
     time_meas tm(smpl->t_total_us);
 
-    llama_sampling_apply_guidance_impl(*smpl, logits, logits_guidance, scale);
+    llama_sampling_cfg_impl(*smpl, logits, logits_guidance);
 }
 
-llama_token llama_sampling_sample_mirostat(struct llama_sampling * smpl, llama_token_data_array * candidates, float tau, float eta, int32_t m, float * mu) {
+llama_token llama_sampling_sample_mirostat(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    auto res = llama_sampling_sample_mirostat_impl(*smpl, candidates, tau, eta, m, mu);
+    const auto type = smpl->params.mirostat;
 
-    smpl->n_sample++;
+    llama_token res;
 
-    return res;
-}
-
-llama_token llama_sampling_sample_mirostat_v2(struct llama_sampling * smpl, llama_token_data_array * candidates, float tau, float eta, float * mu) {
-    time_meas tm(smpl->t_total_us);
-
-    auto res = llama_sampling_sample_mirostat_v2_impl(*smpl, candidates, tau, eta, mu);
+    if (type == 1) {
+        res = llama_sampling_sample_mirostat_impl(candidates,
+                smpl->rng,
+                smpl->params.mirostat_tau,
+                smpl->params.mirostat_eta,
+                100,
+                smpl->vocab.n_vocab,
+                smpl->mirostat_mu);
+    } else if (type == 2) {
+        res = llama_sampling_sample_mirostat_v2_impl(candidates,
+                smpl->rng,
+                smpl->params.mirostat_tau,
+                smpl->params.mirostat_eta,
+                smpl->mirostat_mu);
+    } else {
+        GGML_ABORT("invalid mirostat type: %d", type);
+    }
 
     smpl->n_sample++;
 
@@ -20200,7 +20220,7 @@ llama_token llama_sampling_sample_mirostat_v2(struct llama_sampling * smpl, llam
 llama_token llama_sampling_sample_greedy(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    auto res = llama_sampling_sample_greedy_impl(*smpl, candidates);
+    auto res = llama_sampling_sample_greedy_impl(candidates);
 
     smpl->n_sample++;
 
@@ -20210,7 +20230,7 @@ llama_token llama_sampling_sample_greedy(struct llama_sampling * smpl, llama_tok
 llama_token llama_sampling_sample(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_total_us);
 
-    auto res = llama_sampling_sample_impl(*smpl, candidates);
+    auto res = llama_sampling_sample_impl(candidates, smpl->rng);
 
     smpl->n_sample++;
 
@@ -20219,10 +20239,19 @@ llama_token llama_sampling_sample(struct llama_sampling * smpl, llama_token_data
 
 void llama_sampling_accept(
         struct llama_sampling * smpl,
-                  llama_token   token) {
+                  llama_token   token,
+                         bool   apply_grammar) {
     time_meas tm(smpl->t_total_us); // TODO: measure grammar time separately from sampling
 
-    llama_sampling_accept_impl(*smpl, token);
+    llama_sampling_accept_impl(*smpl, token, apply_grammar);
+}
+
+llama_token llama_sampling_prev(const struct llama_sampling * smpl, int32_t ith) {
+    return llama_sampling_prev_impl(*smpl, ith);
+}
+
+int llama_sampling_n_prev(const struct llama_sampling * smpl) {
+    return llama_sampling_n_prev_impl(*smpl);
 }
 
 //

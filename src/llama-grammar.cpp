@@ -683,8 +683,8 @@ static void llama_grammar_advance_stack(
 }
 
 static llama_grammar_candidates llama_grammar_reject_candidates(
-        const llama_grammar_rules  & rules,
-        const llama_grammar_stacks & stacks,
+        const llama_grammar_rules      & rules,
+        const llama_grammar_stacks     & stacks,
         const llama_grammar_candidates & candidates) {
     GGML_ASSERT(!stacks.empty()); // REVIEW
 
@@ -697,6 +697,7 @@ static llama_grammar_candidates llama_grammar_reject_candidates(
     for (size_t i = 1, size = stacks.size(); i < size; ++i) {
         rejects = llama_grammar_reject_candidates_for_stack(rules, stacks[i], rejects);
     }
+
     return rejects;
 }
 

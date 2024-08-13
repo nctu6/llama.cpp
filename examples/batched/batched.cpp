@@ -64,7 +64,13 @@ int main(int argc, char ** argv) {
     ctx_params.n_batch = std::max(n_predict, n_parallel);
 
     llama_context * ctx = llama_new_context_with_model(model, ctx_params);
-    llama_sampling * smpl = llama_sampling_init(model, llama_sampling_default_params());
+
+    auto sparams = llama_sampling_default_params();
+    sparams.top_k = 40;
+    sparams.top_p = 0.9f;
+    sparams.temp  = 0.4f;
+
+    llama_sampling * smpl = llama_sampling_init(model, sparams);
 
     if (ctx == NULL) {
         fprintf(stderr , "%s: error: failed to create the llama_context\n" , __func__);
@@ -177,13 +183,9 @@ int main(int argc, char ** argv) {
 
             llama_token_data_array candidates_p = { candidates.data(), candidates.size(), false };
 
-            const int   top_k = 40;
-            const float top_p = 0.9f;
-            const float temp  = 0.4f;
-
-            llama_sampling_top_k(smpl, &candidates_p, top_k, 1);
-            llama_sampling_top_p(smpl, &candidates_p, top_p, 1);
-            llama_sampling_temp (smpl, &candidates_p, temp);
+            llama_sampling_top_k(smpl, &candidates_p);
+            llama_sampling_top_p(smpl, &candidates_p);
+            llama_sampling_temp (smpl, &candidates_p);
 
             const llama_token new_token_id = llama_sampling_sample(smpl, &candidates_p);
 

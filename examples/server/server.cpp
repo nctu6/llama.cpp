@@ -2360,9 +2360,10 @@ struct server_context {
                     const size_t n_valid = slot.ctx_sampling->n_valid;
 
                     // Make sure at least n_probs top tokens are at the front of the vector:
-                    if (slot.sparams.temp == 0.0f && n_probs > n_valid) {
-                        llama_sampling_top_k(slot.ctx_sampling->smpl, &cur_p, n_probs, 0);
-                    }
+                    // TODO: decide to how to handle this after the refactoring
+                    //if (slot.sparams.temp == 0.0f && n_probs > n_valid) {
+                    //    llama_sampling_top_k(slot.ctx_sampling->smpl, &cur_p, n_probs, 0);
+                    //}
 
                     if (slot.sparams.temp == 0.0f) {
                         // With greedy sampling the probabilities have possibly not been calculated.
