@@ -40,8 +40,6 @@ struct llama_sampling_context * llama_sampling_init(const struct gpt_sampling_pa
         llama_sampling_set_logit_bias(result->smpl, params.logit_bias.size(), params.logit_bias.data());
     }
 
-    result->n_valid = 0;
-
     return result;
 }
 
@@ -55,7 +53,7 @@ void llama_sampling_reset(llama_sampling_context * ctx) {
     llama_sampling_reset(ctx->smpl);
 
     ctx->cur.clear();
-    ctx->n_valid = 0;
+    ctx->org.clear();
 }
 
 void llama_sampling_cp(llama_sampling_context * src, llama_sampling_context * dst) {
@@ -294,11 +292,11 @@ static llama_token llama_sampling_sample(
 
     llama_token id = 0;
 
-    if (temp < 0.0) {
+    if (temp < 0.0f || (temp == 0.0f && params.n_probs > 0)) {
         // greedy sampling, with probs
         llama_sampling_softmax(smpl, cur_p);
         id = cur_p->data[0].id;
-    } else if (temp == 0.0) {
+    } else if (temp == 0.0f) {
         // greedy sampling, no probs
         id = llama_sampling_sample_greedy(smpl, cur_p);
     } else {
@@ -325,8 +323,6 @@ static llama_token llama_sampling_sample(
         }
     }
 
-    ctx_sampling->n_valid = temp == 0.0f ? 0 : cur_p->size;
-
     return id;
 }
 
@@ -341,7 +337,7 @@ llama_token llama_sampling_sample(
         return llama_sampling_sample(ctx_sampling, &cur_p);
     }
 
-    // TODO: this lofic is confusing, try to figure out a better way to handle this
+    // TODO: this logic is confusing, try to figure out a better way to handle this
 
     // store the original candidates
     ctx_sampling->org = ctx_sampling->cur;

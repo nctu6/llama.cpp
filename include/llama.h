@@ -210,6 +210,7 @@ extern "C" {
     } llama_token_data;
 
     typedef struct llama_token_data_array {
+        // TODO: consider SoA
         llama_token_data * data;
         size_t size;
         bool sorted;

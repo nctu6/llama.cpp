@@ -2352,35 +2352,15 @@ struct server_context {
                     metrics.on_prompt_eval(slot);
                 }
 
-                llama_token_data_array cur_p = { slot.ctx_sampling->cur.data(), slot.ctx_sampling->cur.size(), false };
                 result.tok = id;
 
-                const size_t n_probs = std::min(cur_p.size, (size_t) slot.sparams.n_probs);
-                if (n_probs > 0) {
-                    const size_t n_valid = slot.ctx_sampling->n_valid;
+                const llama_token_data_array cur_p = { slot.ctx_sampling->cur.data(), slot.ctx_sampling->cur.size(), false };
 
-                    // Make sure at least n_probs top tokens are at the front of the vector:
-                    // TODO: decide to how to handle this after the refactoring
-                    //if (slot.sparams.temp == 0.0f && n_probs > n_valid) {
-                    //    llama_sampling_top_k(slot.ctx_sampling->smpl, &cur_p, n_probs, 0);
-                    //}
-
-                    if (slot.sparams.temp == 0.0f) {
-                        // With greedy sampling the probabilities have possibly not been calculated.
-                        for (size_t i = 0; i < n_probs; ++i) {
-                            result.probs.push_back({
-                                cur_p.data[i].id,
-                                i == 0 ? 1.0f : 0.0f
-                            });
-                        }
-                    } else {
-                        for (size_t i = 0; i < n_probs; ++i) {
-                            result.probs.push_back({
-                                cur_p.data[i].id,
-                                i >= n_valid ? 0.0f : cur_p.data[i].p // Tokens filtered out due to e.g. top_k have 0 probability.
-                            });
-                        }
-                    }
+                for (size_t i = 0; i < (size_t) slot.sparams.n_probs; ++i) {
+                    result.probs.push_back({
+                        cur_p.data[i].id,
+                        i >= cur_p.size ? 0.0f : cur_p.data[i].p,
+                    });
                 }
 
                 if (!process_token(result, slot)) {
