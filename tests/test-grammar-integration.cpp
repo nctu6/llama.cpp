@@ -2,11 +2,7 @@
 #undef NDEBUG
 #endif
 
-#include "ggml.h"
-#include "llama.h"
-#include "llama-vocab.h" // TMP
 #include "llama-grammar.h"
-#include "unicode.h"
 #include "json-schema-to-grammar.h"
 
 #include <cassert>
@@ -15,10 +11,8 @@
 
 using json = nlohmann::ordered_json;
 
-llama_vocab vocab; // TMP
-
 static llama_grammar * build_grammar(const std::string & grammar_str) {
-    return llama_grammar_init_impl(vocab, grammar_str.c_str(), "root");
+    return llama_grammar_init_impl(nullptr, grammar_str.c_str(), "root");
 }
 
 static bool test_build_grammar_fails(const std::string & grammar_str) {
@@ -45,7 +39,7 @@ static bool match_string(const std::string & input, llama_grammar * grammar) {
     for (auto it = code_points.begin(), end = code_points.end() - 1; it != end; ++it) {
         const llama_grammar_stacks prev_stacks = llama_grammar_get_stacks(grammar); // copy
 
-        llama_grammar_accept(rules, prev_stacks, *it, cur_stacks);
+        cur_stacks = llama_grammar_accept(rules, prev_stacks, *it);
 
         if (cur_stacks.empty()) {
             // no stacks means that the grammar failed to match at this point

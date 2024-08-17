@@ -1,6 +1,5 @@
 #include "ggml.h"
 #include "llama.h"
-#include "llama-vocab.h" // TMP
 #include "llama-grammar.h"
 #include "unicode.h"
 
@@ -11,7 +10,7 @@
 #include <string>
 #include <vector>
 
-static bool llama_sample_grammar_string(struct llama_grammar * grammar, const std::string & input_str, size_t & error_pos, std::string & error_msg) {
+static bool llama_grammar_validate(struct llama_grammar * grammar, const std::string & input_str, size_t & error_pos, std::string & error_msg) {
     auto decoded = decode_utf8(input_str, {});
     const auto & code_points = decoded.first;
 
@@ -22,7 +21,7 @@ static bool llama_sample_grammar_string(struct llama_grammar * grammar, const st
     for (auto it = code_points.begin(), end = code_points.end() - 1; it != end; ++it) {
         const llama_grammar_stacks prev_stacks = llama_grammar_get_stacks(grammar); // copy
 
-        llama_grammar_accept(rules, prev_stacks, *it, cur_stacks);
+        cur_stacks = llama_grammar_accept(rules, prev_stacks, *it);
 
         if (cur_stacks.empty()) {
             error_pos = pos;
@@ -84,8 +83,7 @@ int main(int argc, char** argv) {
         grammar_str = buffer.str();
     }
 
-    llama_vocab vocab; // TMP
-    llama_grammar * grammar = llama_grammar_init_impl(vocab, grammar_str.c_str(), "root");
+    llama_grammar * grammar = llama_grammar_init_impl(nullptr, grammar_str.c_str(), "root");
     if (grammar == nullptr) {
         throw std::runtime_error("Failed to initialize llama_grammar");
     }
@@ -102,7 +100,7 @@ int main(int argc, char** argv) {
     // Validate the input string against the grammar
     size_t error_pos;
     std::string error_msg;
-    bool is_valid = llama_sample_grammar_string(grammar, input_str, error_pos, error_msg);
+    bool is_valid = llama_grammar_validate(grammar, input_str, error_pos, error_msg);
 
     if (is_valid) {
         fprintf(stdout, "Input string is valid according to the grammar.\n");

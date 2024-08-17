@@ -3,7 +3,6 @@
 #endif
 
 #include "llama.h"
-#include "llama-vocab.h" // TMP
 #include "llama-grammar.h"
 
 #include <cassert>
@@ -117,8 +116,7 @@ int main()
     llama_grammar * grammar = NULL;
     std::vector<const llama_grammar_element *> grammar_rules(parsed_grammar.c_rules());
 
-    llama_vocab vocab; // TMP
-    grammar = llama_grammar_init_impl(vocab, grammar_rules.data(), grammar_rules.size(), parsed_grammar.symbol_ids.at("root"));
+    grammar = llama_grammar_init_impl(nullptr, grammar_rules.data(), grammar_rules.size(), parsed_grammar.symbol_ids.at("root"));
     if (grammar == nullptr)
     {
         throw std::runtime_error("Failed to initialize llama_grammar");
@@ -175,13 +173,13 @@ int main()
         }};
 
     auto index = 0;
-    for (auto stack : llama_grammar_get_stacks(grammar))
+    for (const llama_grammar_stack & stack : llama_grammar_get_stacks(grammar))
     {
         // compare stack to expected_stack
         for (uint32_t i = 0; i < stack.size(); i++)
         {
-            auto element = stack[i];
-            auto expected_element = expected_stacks[index][i];
+            const llama_grammar_element * element = stack[i];
+            const llama_grammar_element & expected_element = expected_stacks[index][i];
 
             // pretty print error message before asserting
             if (expected_element.type != element->type || expected_element.value != element->value)

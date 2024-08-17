@@ -76,7 +76,7 @@ void llama_sampling_reset_impl(struct llama_sampling & smpl) {
     }
 
     if (!smpl.grammar_str.empty()) {
-        smpl.grammar = llama_grammar_init_impl(smpl.vocab, smpl.grammar_str.data(), smpl.grammar_root.data());
+        smpl.grammar = llama_grammar_init_impl(&smpl.vocab, smpl.grammar_str.data(), smpl.grammar_root.data());
     }
 
     smpl.prev.clear();
@@ -100,7 +100,7 @@ void llama_sampling_set_grammar_impl(struct llama_sampling & smpl, const char * 
         smpl.grammar_str  = grammar_str;
         smpl.grammar_root = grammar_root;
 
-        smpl.grammar = llama_grammar_init_impl(smpl.vocab, grammar_str, grammar_root);
+        smpl.grammar = llama_grammar_init_impl(&smpl.vocab, grammar_str, grammar_root);
     } else {
         smpl.grammar_str.clear();
         smpl.grammar_root.clear();

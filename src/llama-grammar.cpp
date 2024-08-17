@@ -754,10 +754,10 @@ static bool llama_grammar_detect_left_recursion(
 }
 
 struct llama_grammar * llama_grammar_init_impl(
-        const struct llama_vocab & vocab,
+        const struct llama_vocab * vocab,
         const llama_grammar_element ** rules,
-        size_t    n_rules,
-        size_t    start_rule_index) {
+        size_t n_rules,
+        size_t start_rule_index) {
     const llama_grammar_element * pos;
 
     // copy rule definitions into vectors
@@ -808,10 +808,10 @@ struct llama_grammar * llama_grammar_init_impl(
     // Important: vec_rules has to be moved here, not copied, because stacks contains
     // pointers to elements of vec_rules. If vec_rules were copied into llama_grammar
     // then the pointers would be invalidated when the local vec_rules goes out of scope.
-    return new llama_grammar{ vocab, std::move(vec_rules), std::move(stacks), {}, 0, 0, 0 };
+    return new llama_grammar { vocab, std::move(vec_rules), std::move(stacks), {}, 0, 0, 0 };
 }
 
-struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab & vocab, const char * grammar_str, const char * grammar_root) {
+struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab * vocab, const char * grammar_str, const char * grammar_root) {
     llama_grammar_parser parser;
 
     // if there is a grammar, parse it
@@ -886,7 +886,7 @@ struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab & vocab,
     // Important: vec_rules has to be moved here, not copied, because stacks contains
     // pointers to elements of vec_rules. If vec_rules were copied into llama_grammar
     // then the pointers would be invalidated when the local vec_rules goes out of scope.
-    return new llama_grammar{ vocab, std::move(vec_rules), std::move(stacks), {}, 0, 0, 0 };
+    return new llama_grammar { vocab, std::move(vec_rules), std::move(stacks), {}, 0, 0, 0 };
 }
 
 void llama_grammar_free_impl(struct llama_grammar * grammar) {
@@ -894,7 +894,7 @@ void llama_grammar_free_impl(struct llama_grammar * grammar) {
 }
 
 struct llama_grammar * llama_grammar_copy_impl(const struct llama_grammar & grammar) {
-    llama_grammar * result = new llama_grammar{ grammar.vocab, grammar.rules, grammar.stacks, grammar.partial_utf8, 0, 0, 0 };
+    llama_grammar * result = new llama_grammar { grammar.vocab, grammar.rules, grammar.stacks, grammar.partial_utf8, 0, 0, 0 };
 
     // redirect elements in stacks to point to new rules
     for (size_t is = 0; is < result->stacks.size(); is++) {
@@ -913,6 +913,8 @@ struct llama_grammar * llama_grammar_copy_impl(const struct llama_grammar & gram
 }
 
 void llama_grammar_apply_impl(const struct llama_grammar & grammar, llama_token_data_array * candidates) {
+    GGML_ASSERT(grammar.vocab != nullptr);
+
     bool allow_eog = false;
     for (const auto & stack : grammar.stacks) {
         if (stack.empty()) {
@@ -929,9 +931,9 @@ void llama_grammar_apply_impl(const struct llama_grammar & grammar, llama_token_
 
     for (size_t i = 0; i < candidates->size; ++i) {
         const llama_token id      = candidates->data[i].id;
-        const std::string & piece = grammar.vocab.cache_token_to_piece.at(id);
+        const std::string & piece = grammar.vocab->cache_token_to_piece.at(id);
 
-        if (llama_token_is_eog_impl(grammar.vocab, id)) {
+        if (llama_token_is_eog_impl(*grammar.vocab, id)) {
             if (!allow_eog) {
                 candidates->data[i].logit = -INFINITY;
             }
@@ -950,7 +952,9 @@ void llama_grammar_apply_impl(const struct llama_grammar & grammar, llama_token_
 }
 
 void llama_grammar_accept_impl(struct llama_grammar & grammar, llama_token token) {
-    if (llama_token_is_eog_impl(grammar.vocab, token)) {
+    GGML_ASSERT(grammar.vocab != nullptr);
+
+    if (llama_token_is_eog_impl(*grammar.vocab, token)) {
         for (const auto & stack : grammar.stacks) {
             if (stack.empty()) {
                 return;
@@ -959,16 +963,15 @@ void llama_grammar_accept_impl(struct llama_grammar & grammar, llama_token token
         GGML_ABORT("fatal error");
     }
 
-    const std::string & piece = grammar.vocab.cache_token_to_piece.at(token);
+    const std::string & piece = grammar.vocab->cache_token_to_piece.at(token);
 
     // Note terminating 0 in decoded string
     const auto   decoded     = decode_utf8(piece, grammar.partial_utf8);
     const auto & code_points = decoded.first;
 
-    llama_grammar_stacks tmp_new_stacks;
     for (auto it = code_points.begin(), end = code_points.end() - 1; it != end; ++it) {
-        llama_grammar_accept(grammar.rules, grammar.stacks, *it, tmp_new_stacks);
-        grammar.stacks = tmp_new_stacks;
+        llama_grammar_stacks new_stacks = llama_grammar_accept(grammar.rules, grammar.stacks, *it);
+        grammar.stacks = std::move(new_stacks);
     }
 
     grammar.partial_utf8 = decoded.second;
@@ -1045,12 +1048,12 @@ std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(
     return std::make_pair(std::move(code_points), llama_partial_utf8{ value, n_remain });
 }
 
-void llama_grammar_accept(
+llama_grammar_stacks llama_grammar_accept(
         const llama_grammar_rules  & rules,
         const llama_grammar_stacks & stacks,
-        const uint32_t               chr,
-              llama_grammar_stacks & new_stacks) {
-    new_stacks.clear();
+        const uint32_t               chr) {
+    llama_grammar_stacks result;
+    result.reserve(stacks.size());
 
     for (const auto & stack : stacks) {
         if (stack.empty()) {
@@ -1066,9 +1069,11 @@ void llama_grammar_accept(
             if (!llama_grammar_is_end_of_sequence(pos)) {
                 new_stack.push_back(pos);
             }
-            llama_grammar_advance_stack(rules, new_stack, new_stacks);
+            llama_grammar_advance_stack(rules, new_stack, result);
         }
     }
+
+    return result;
 }
 
 llama_grammar_candidates llama_grammar_reject_candidates_for_stack(

@@ -71,11 +71,10 @@ std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(
 // be positioned at a character range (see `llama_grammar_advance_stack`), and
 // produces the N possible stacks if the given char is accepted at those
 // positions
-void llama_grammar_accept(
+llama_grammar_stacks llama_grammar_accept(
         const llama_grammar_rules  & rules,
         const llama_grammar_stacks & stacks,
-        const uint32_t chr,
-              llama_grammar_stacks & new_stacks);
+                          uint32_t   chr);
 
 std::vector<llama_grammar_candidate> llama_grammar_reject_candidates_for_stack(
         const llama_grammar_rules & rules,
@@ -113,7 +112,8 @@ struct llama_grammar_parser {
 };
 
 struct llama_grammar {
-    const llama_vocab & vocab;
+    // note: allow null vocab for testing (not great)
+    const llama_vocab * vocab;
 
     const llama_grammar_rules  rules;  // TODO: shared ptr
           llama_grammar_stacks stacks;
@@ -131,14 +131,14 @@ struct llama_grammar {
 // internal API
 //
 
-// TODO: temporary until the tests are fixed
+// note: needed for tests (not great)
 struct llama_grammar * llama_grammar_init_impl(
-        const struct llama_vocab & vocab,
+        const struct llama_vocab * vocab,
         const llama_grammar_element ** rules,
         size_t n_rules,
         size_t start_rule_index);
 
-struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab & vocab, const char * grammar_str, const char * grammar_root);
+struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab * vocab, const char * grammar_str, const char * grammar_root);
 
 void llama_grammar_free_impl(struct llama_grammar * grammar);
 
