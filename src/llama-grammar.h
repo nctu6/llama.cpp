@@ -61,12 +61,6 @@ using llama_grammar_candidates = std::vector<llama_grammar_candidate>;
 const llama_grammar_rules  & llama_grammar_get_rules (const struct llama_grammar * grammar);
       llama_grammar_stacks & llama_grammar_get_stacks(      struct llama_grammar * grammar);
 
-// Decodes a UTF-8 string which may end in an incomplete sequence. Adds a terminating 0 for use as
-// pointer. If an invalid sequence is encountered, returns `llama_partial_utf8.n_remain == -1`.
-std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(
-        const std::string & src,
-        llama_partial_utf8 partial_start);
-
 // takes a set of possible pushdown stacks on a grammar, which are required to
 // be positioned at a character range (see `llama_grammar_advance_stack`), and
 // produces the N possible stacks if the given char is accepted at those
@@ -77,8 +71,8 @@ llama_grammar_stacks llama_grammar_accept(
                           uint32_t   chr);
 
 std::vector<llama_grammar_candidate> llama_grammar_reject_candidates_for_stack(
-        const llama_grammar_rules & rules,
-        const llama_grammar_stack & stack,
+        const llama_grammar_rules      & rules,
+        const llama_grammar_stack      & stack,
         const llama_grammar_candidates & candidates);
 
 struct llama_grammar_parser {
@@ -142,7 +136,7 @@ struct llama_grammar * llama_grammar_init_impl(const struct llama_vocab * vocab,
 
 void llama_grammar_free_impl(struct llama_grammar * grammar);
 
-struct llama_grammar * llama_grammar_copy_impl(const struct llama_grammar & grammar);
+struct llama_grammar * llama_grammar_cp_impl(const struct llama_grammar & grammar);
 
 // TODO: move the API below as member functions of llama_grammar
 void llama_grammar_apply_impl(

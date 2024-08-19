@@ -11,7 +11,6 @@
 //
 
 // NOTE: assumes valid utf8 (but checks for overrun)
-// TODO: deduplicate
 static std::pair<uint32_t, const char *> decode_utf8(const char * src) {
     static const int lookup[] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 4 };
     uint8_t  first_byte = static_cast<uint8_t>(*src);
@@ -25,6 +24,66 @@ static std::pair<uint32_t, const char *> decode_utf8(const char * src) {
         value = (value << 6) + (static_cast<uint8_t>(*pos) & 0x3F);
     }
     return std::make_pair(value, pos);
+}
+
+static std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(
+        const std::string & src,
+        llama_partial_utf8 partial_start) {
+    static const int      lookup[] = { 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 3, 4 };
+    const char          * pos      = src.c_str();
+    std::vector<uint32_t> code_points;
+
+    // common english strings have the same number of codepoints and bytes. `+ 1` for the terminating 0.
+    code_points.reserve(src.size() + 1);
+    uint32_t value    = partial_start.value;
+    int      n_remain = partial_start.n_remain;
+
+    // continue previous decode, if applicable
+    while (*pos != 0 && n_remain > 0) {
+        uint8_t next_byte = static_cast<uint8_t>(*pos);
+        if ((next_byte >> 6) != 2) {
+            // invalid sequence, abort
+            code_points.push_back(0);
+            return std::make_pair(std::move(code_points), llama_partial_utf8{ 0, -1 });
+        }
+        value = (value << 6) + (next_byte & 0x3F);
+        ++pos;
+        --n_remain;
+    }
+
+    if (partial_start.n_remain > 0 && n_remain == 0) {
+        code_points.push_back(value);
+    }
+
+    // decode any subsequent utf-8 sequences, which may end in an incomplete one
+    while (*pos != 0) {
+        uint8_t first_byte = static_cast<uint8_t>(*pos);
+        uint8_t highbits   = first_byte >> 4;
+        n_remain   = lookup[highbits] - 1;
+
+        if (n_remain < 0) {
+            // invalid sequence, abort
+            code_points.clear();
+            code_points.push_back(0);
+            return std::make_pair(std::move(code_points), llama_partial_utf8{ 0, n_remain });
+        }
+
+        uint8_t mask  = (1 << (7 - n_remain)) - 1;
+        value = first_byte & mask;
+
+        ++pos;
+        while (*pos != 0 && n_remain > 0) {
+            value = (value << 6) + (static_cast<uint8_t>(*pos) & 0x3F);
+            ++pos;
+            --n_remain;
+        }
+        if (n_remain == 0) {
+            code_points.push_back(value);
+        }
+    }
+    code_points.push_back(0);
+
+    return std::make_pair(std::move(code_points), llama_partial_utf8{ value, n_remain });
 }
 
 static bool is_digit_char(char c) {
@@ -750,8 +809,102 @@ static bool llama_grammar_detect_left_recursion(
 
     (*rules_in_progress)[rule_index] = false;
     (*rules_visited)[rule_index] = true;
+
     return false;
 }
+
+const llama_grammar_rules & llama_grammar_get_rules(const struct llama_grammar * grammar) {
+    return grammar->rules;
+}
+
+llama_grammar_stacks & llama_grammar_get_stacks(struct llama_grammar * grammar) {
+    return grammar->stacks;
+}
+
+llama_grammar_stacks llama_grammar_accept(
+        const llama_grammar_rules  & rules,
+        const llama_grammar_stacks & stacks,
+        const uint32_t               chr) {
+    llama_grammar_stacks result;
+    result.reserve(stacks.size());
+
+    for (const auto & stack : stacks) {
+        if (stack.empty()) {
+            continue;
+        }
+
+        auto match = llama_grammar_match_char(stack.back(), chr);
+        if (match.first) {
+            const llama_grammar_element * pos = match.second;
+
+            // update top of stack to next element, if any
+            llama_grammar_stack new_stack(stack.begin(), stack.end() - 1);
+            if (!llama_grammar_is_end_of_sequence(pos)) {
+                new_stack.push_back(pos);
+            }
+            llama_grammar_advance_stack(rules, new_stack, result);
+        }
+    }
+
+    return result;
+}
+
+llama_grammar_candidates llama_grammar_reject_candidates_for_stack(
+        const llama_grammar_rules      & rules,
+        const llama_grammar_stack      & stack,
+        const llama_grammar_candidates & candidates) {
+
+    llama_grammar_candidates rejects;
+    rejects.reserve(candidates.size());
+
+    if (stack.empty()) {
+        for (const auto & tok : candidates) {
+            if (*tok.code_points != 0 || tok.partial_utf8.n_remain != 0) {
+                rejects.push_back(tok);
+            }
+        }
+        return rejects;
+    }
+
+    const llama_grammar_element * stack_pos = stack.back();
+
+    llama_grammar_candidates next_candidates;
+    next_candidates.reserve(candidates.size());
+
+    for (const auto & tok : candidates) {
+        if (*tok.code_points == 0) {
+            // reached end of full codepoints in token, reject iff it ended in a partial sequence
+            // that cannot satisfy this position in grammar
+            if (tok.partial_utf8.n_remain != 0 &&
+                    !llama_grammar_match_partial_char(stack_pos, tok.partial_utf8)) {
+                rejects.push_back(tok);
+            }
+        } else if (llama_grammar_match_char(stack_pos, *tok.code_points).first) {
+            next_candidates.push_back({ tok.index, tok.code_points + 1, tok.partial_utf8 });
+        } else {
+            rejects.push_back(tok);
+        }
+    }
+
+    const auto * stack_pos_after = llama_grammar_match_char(stack_pos, 0).second;
+
+    // update top of stack to next element, if any
+    llama_grammar_stack stack_after(stack.begin(), stack.end() - 1);
+    if (!llama_grammar_is_end_of_sequence(stack_pos_after)) {
+        stack_after.push_back(stack_pos_after);
+    }
+    llama_grammar_stacks next_stacks;
+    llama_grammar_advance_stack(rules, stack_after, next_stacks);
+
+    auto next_rejects = llama_grammar_reject_candidates(rules, next_stacks, next_candidates);
+    for (const auto & tok : next_rejects) {
+        rejects.push_back({ tok.index, tok.code_points - 1, tok.partial_utf8 });
+    }
+
+    return rejects;
+}
+
+////////////////////
 
 struct llama_grammar * llama_grammar_init_impl(
         const struct llama_vocab * vocab,
@@ -893,7 +1046,7 @@ void llama_grammar_free_impl(struct llama_grammar * grammar) {
     delete grammar;
 }
 
-struct llama_grammar * llama_grammar_copy_impl(const struct llama_grammar & grammar) {
+struct llama_grammar * llama_grammar_cp_impl(const struct llama_grammar & grammar) {
     llama_grammar * result = new llama_grammar { grammar.vocab, grammar.rules, grammar.stacks, grammar.partial_utf8, 0, 0, 0 };
 
     // redirect elements in stacks to point to new rules
@@ -976,157 +1129,4 @@ void llama_grammar_accept_impl(struct llama_grammar & grammar, llama_token token
 
     grammar.partial_utf8 = decoded.second;
     GGML_ASSERT(!grammar.stacks.empty());
-}
-
-////////////////////
-
-const llama_grammar_rules & llama_grammar_get_rules(const struct llama_grammar * grammar) {
-    return grammar->rules;
-}
-
-llama_grammar_stacks & llama_grammar_get_stacks(struct llama_grammar * grammar) {
-    return grammar->stacks;
-}
-
-std::pair<std::vector<uint32_t>, llama_partial_utf8> decode_utf8(
-        const std::string & src,
-        llama_partial_utf8 partial_start) {
-    static const int      lookup[] = { 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 2, 2, 3, 4 };
-    const char          * pos      = src.c_str();
-    std::vector<uint32_t> code_points;
-
-    // common english strings have the same number of codepoints and bytes. `+ 1` for the terminating 0.
-    code_points.reserve(src.size() + 1);
-    uint32_t value    = partial_start.value;
-    int      n_remain = partial_start.n_remain;
-
-    // continue previous decode, if applicable
-    while (*pos != 0 && n_remain > 0) {
-        uint8_t next_byte = static_cast<uint8_t>(*pos);
-        if ((next_byte >> 6) != 2) {
-            // invalid sequence, abort
-            code_points.push_back(0);
-            return std::make_pair(std::move(code_points), llama_partial_utf8{ 0, -1 });
-        }
-        value = (value << 6) + (next_byte & 0x3F);
-        ++pos;
-        --n_remain;
-    }
-
-    if (partial_start.n_remain > 0 && n_remain == 0) {
-        code_points.push_back(value);
-    }
-
-    // decode any subsequent utf-8 sequences, which may end in an incomplete one
-    while (*pos != 0) {
-        uint8_t first_byte = static_cast<uint8_t>(*pos);
-        uint8_t highbits   = first_byte >> 4;
-        n_remain   = lookup[highbits] - 1;
-
-        if (n_remain < 0) {
-            // invalid sequence, abort
-            code_points.clear();
-            code_points.push_back(0);
-            return std::make_pair(std::move(code_points), llama_partial_utf8{ 0, n_remain });
-        }
-
-        uint8_t mask  = (1 << (7 - n_remain)) - 1;
-        value = first_byte & mask;
-
-        ++pos;
-        while (*pos != 0 && n_remain > 0) {
-            value = (value << 6) + (static_cast<uint8_t>(*pos) & 0x3F);
-            ++pos;
-            --n_remain;
-        }
-        if (n_remain == 0) {
-            code_points.push_back(value);
-        }
-    }
-    code_points.push_back(0);
-
-    return std::make_pair(std::move(code_points), llama_partial_utf8{ value, n_remain });
-}
-
-llama_grammar_stacks llama_grammar_accept(
-        const llama_grammar_rules  & rules,
-        const llama_grammar_stacks & stacks,
-        const uint32_t               chr) {
-    llama_grammar_stacks result;
-    result.reserve(stacks.size());
-
-    for (const auto & stack : stacks) {
-        if (stack.empty()) {
-            continue;
-        }
-
-        auto match = llama_grammar_match_char(stack.back(), chr);
-        if (match.first) {
-            const llama_grammar_element * pos = match.second;
-
-            // update top of stack to next element, if any
-            llama_grammar_stack new_stack(stack.begin(), stack.end() - 1);
-            if (!llama_grammar_is_end_of_sequence(pos)) {
-                new_stack.push_back(pos);
-            }
-            llama_grammar_advance_stack(rules, new_stack, result);
-        }
-    }
-
-    return result;
-}
-
-llama_grammar_candidates llama_grammar_reject_candidates_for_stack(
-        const llama_grammar_rules      & rules,
-        const llama_grammar_stack      & stack,
-        const llama_grammar_candidates & candidates) {
-
-    llama_grammar_candidates rejects;
-    rejects.reserve(candidates.size());
-
-    if (stack.empty()) {
-        for (const auto & tok : candidates) {
-            if (*tok.code_points != 0 || tok.partial_utf8.n_remain != 0) {
-                rejects.push_back(tok);
-            }
-        }
-        return rejects;
-    }
-
-    const llama_grammar_element * stack_pos = stack.back();
-
-    llama_grammar_candidates next_candidates;
-    next_candidates.reserve(candidates.size());
-
-    for (const auto & tok : candidates) {
-        if (*tok.code_points == 0) {
-            // reached end of full codepoints in token, reject iff it ended in a partial sequence
-            // that cannot satisfy this position in grammar
-            if (tok.partial_utf8.n_remain != 0 &&
-                    !llama_grammar_match_partial_char(stack_pos, tok.partial_utf8)) {
-                rejects.push_back(tok);
-            }
-        } else if (llama_grammar_match_char(stack_pos, *tok.code_points).first) {
-            next_candidates.push_back({ tok.index, tok.code_points + 1, tok.partial_utf8 });
-        } else {
-            rejects.push_back(tok);
-        }
-    }
-
-    const auto * stack_pos_after = llama_grammar_match_char(stack_pos, 0).second;
-
-    // update top of stack to next element, if any
-    llama_grammar_stack stack_after(stack.begin(), stack.end() - 1);
-    if (!llama_grammar_is_end_of_sequence(stack_pos_after)) {
-        stack_after.push_back(stack_pos_after);
-    }
-    llama_grammar_stacks next_stacks;
-    llama_grammar_advance_stack(rules, stack_after, next_stacks);
-
-    auto next_rejects = llama_grammar_reject_candidates(rules, next_stacks, next_candidates);
-    for (const auto & tok : next_rejects) {
-        rejects.push_back({ tok.index, tok.code_points - 1, tok.partial_utf8 });
-    }
-
-    return rejects;
 }

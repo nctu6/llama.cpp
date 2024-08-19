@@ -1,7 +1,5 @@
-#include "ggml.h"
-#include "llama.h"
-#include "llama-grammar.h"
 #include "unicode.h"
+#include "llama-grammar.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,21 +9,20 @@
 #include <vector>
 
 static bool llama_grammar_validate(struct llama_grammar * grammar, const std::string & input_str, size_t & error_pos, std::string & error_msg) {
-    auto decoded = decode_utf8(input_str, {});
-    const auto & code_points = decoded.first;
+    const auto cpts = unicode_cpts_from_utf8(input_str);
 
     const llama_grammar_rules  & rules      = llama_grammar_get_rules (grammar);
           llama_grammar_stacks & cur_stacks = llama_grammar_get_stacks(grammar);
 
     size_t pos = 0;
-    for (auto it = code_points.begin(), end = code_points.end() - 1; it != end; ++it) {
+    for (const auto & cpt : cpts) {
         const llama_grammar_stacks prev_stacks = llama_grammar_get_stacks(grammar); // copy
 
-        cur_stacks = llama_grammar_accept(rules, prev_stacks, *it);
+        cur_stacks = llama_grammar_accept(rules, prev_stacks, cpt);
 
         if (cur_stacks.empty()) {
             error_pos = pos;
-            error_msg = "Unexpected character '" + unicode_cpt_to_utf8(*it) + "'";
+            error_msg = "Unexpected character '" + unicode_cpt_to_utf8(cpt) + "'";
             cur_stacks = prev_stacks;
             return false;
         }

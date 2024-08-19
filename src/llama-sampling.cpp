@@ -60,7 +60,7 @@ struct llama_sampling * llama_sampling_cp_impl(const struct llama_sampling & smp
     result->logit_bias = smpl.logit_bias;
 
     if (smpl.grammar) {
-        result->grammar = llama_grammar_copy_impl(*smpl.grammar);
+        result->grammar = llama_grammar_cp_impl(*smpl.grammar);
     }
 
     result->rng  = smpl.rng;
@@ -450,13 +450,15 @@ void llama_sampling_entropy_impl(llama_token_data_array * candidates, float min_
     }
 
     // Re-compute softmax probabilities after scaling logits with dynamic temperature
-    double max_l_double = candidates->data[0].logit;
+    const double max_l_double = candidates->data[0].logit;
+
     double cum_sum_double = 0.0;
     for (size_t i = 0; i < candidates->size; ++i) {
         double p = exp(candidates->data[i].logit - max_l_double);
         candidates->data[i].p = p; // Store the scaled probability
         cum_sum_double += p;
     }
+
     for (size_t i = 0; i < candidates->size; ++i) {
         candidates->data[i].p /= cum_sum_double; // Re-normalize the probabilities
     }

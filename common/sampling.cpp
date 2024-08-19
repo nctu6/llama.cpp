@@ -157,25 +157,21 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
 
     std::vector<llama_sampler_type> sampler_types;
     sampler_types.reserve(names.size());
-    for (const auto & name : names)
-    {
+
+    for (const auto & name : names) {
         auto sampler_item = sampler_canonical_name_map.find(name);
-        if (sampler_item != sampler_canonical_name_map.end())
-        {
+        if (sampler_item != sampler_canonical_name_map.end()) {
             sampler_types.push_back(sampler_item->second);
-        }
-        else
-        {
-            if (allow_alt_names)
-            {
+        } else {
+            if (allow_alt_names) {
                 sampler_item = sampler_alt_name_map.find(name);
-                if (sampler_item != sampler_alt_name_map.end())
-                {
+                if (sampler_item != sampler_alt_name_map.end()) {
                     sampler_types.push_back(sampler_item->second);
                 }
             }
         }
     }
+
     return sampler_types;
 }
 

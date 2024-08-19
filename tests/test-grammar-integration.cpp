@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 
+#include "unicode.h"
 #include "llama-grammar.h"
 #include "json-schema-to-grammar.h"
 
@@ -29,17 +30,15 @@ static bool test_build_grammar_fails(const std::string & grammar_str) {
 }
 
 static bool match_string(const std::string & input, llama_grammar * grammar) {
-    auto decoded = decode_utf8(input, {});
-
-    const auto & code_points = decoded.first;
+    const auto cpts = unicode_cpts_from_utf8(input);
 
     const llama_grammar_rules  & rules      = llama_grammar_get_rules (grammar);
           llama_grammar_stacks & cur_stacks = llama_grammar_get_stacks(grammar);
 
-    for (auto it = code_points.begin(), end = code_points.end() - 1; it != end; ++it) {
+    for (const auto & cpt : cpts) {
         const llama_grammar_stacks prev_stacks = llama_grammar_get_stacks(grammar); // copy
 
-        cur_stacks = llama_grammar_accept(rules, prev_stacks, *it);
+        cur_stacks = llama_grammar_accept(rules, prev_stacks, cpt);
 
         if (cur_stacks.empty()) {
             // no stacks means that the grammar failed to match at this point
@@ -61,7 +60,7 @@ static void test(const std::string & test_desc, const std::string & grammar_str,
     fprintf(stderr, "⚫ Testing %s\n%s\n", test_desc.c_str(), grammar_str.c_str());
     fflush(stderr);
 
-    auto grammar = build_grammar(grammar_str);
+    auto * grammar = build_grammar(grammar_str);
 
     // Save the original grammar stacks so that we can reset after every new string we want to test
     const llama_grammar_stacks original_stacks = llama_grammar_get_stacks(grammar);
