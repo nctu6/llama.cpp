@@ -401,12 +401,13 @@ extern "C" {
         double t_load_ms;
         double t_sampling_ms;
         double t_grammar_ms;
+        double t_accept_ms;
         double t_p_eval_ms;
         double t_eval_ms;
 
         int32_t n_sampling;
-        int32_t n_grammar_sample;
-        int32_t n_grammar_accept;
+        int32_t n_grammar;
+        int32_t n_accept;
         int32_t n_p_eval;
         int32_t n_eval;
     };

@@ -34,9 +34,13 @@ struct llama_sampling {
     // mirostat sampler state
     float mirostat_mu;
 
-    mutable int64_t t_total_us = 0;
+    mutable int64_t t_sample_us  = 0;
+    mutable int64_t t_grammar_us = 0;
+    mutable int64_t t_accept_us  = 0;
 
-    mutable int32_t n_sample = 0;
+    mutable int32_t n_sample  = 0;
+    mutable int32_t n_grammar = 0;
+    mutable int32_t n_accept  = 0;
 };
 
 //

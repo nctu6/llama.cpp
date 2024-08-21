@@ -114,11 +114,6 @@ struct llama_grammar {
 
     // buffer for partially generated UTF-8 sequence from accepted tokens
     llama_partial_utf8 partial_utf8;
-
-    mutable int64_t t_total_us;
-
-    mutable int32_t n_sample;
-    mutable int32_t n_accept;
 };
 
 //
