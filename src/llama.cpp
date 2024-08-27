@@ -20095,6 +20095,46 @@ void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit
     llama_sampling_set_logit_bias_impl(*smpl, n_logit_bias, logit_bias);
 }
 
+void llama_sampling_set_logits(struct llama_sampling * smpl, const float * logits) {
+    const int n_vocab = smpl->vocab.n_vocab;
+
+    smpl->cur.resize(n_vocab);
+
+    for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
+        smpl->cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
+    }
+
+    for (const auto & lb : smpl->logit_bias) {
+        smpl->cur[lb.token].logit += lb.bias;
+    }
+
+    if (smpl->params.ignore_eos) {
+        smpl->cur[llama_token_eos_impl(smpl->vocab)].logit = -INFINITY;
+    }
+
+    smpl->cur_p = { smpl->cur.data(), smpl->cur.size(), false };
+
+    // apply penalties
+    {
+        const float nl_logit = smpl->cur[llama_token_nl_impl(smpl->vocab)].logit;
+
+        llama_sampling_penalties(smpl, &smpl->cur_p);
+
+        if (!smpl->params.penalize_nl) {
+            for (size_t idx = 0; idx < smpl->cur_p.size; idx++) {
+                if (smpl->cur_p.data[idx].id == llama_token_nl_impl(smpl->vocab)) {
+                    smpl->cur_p.data[idx].logit = nl_logit;
+                    break;
+                }
+            }
+        }
+    }
+}
+
+llama_token_data_array * llama_sampling_get_candidates(struct llama_sampling * smpl) {
+    return &smpl->cur_p;
+}
+
 void llama_sampling_softmax(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
@@ -20149,9 +20189,9 @@ void llama_sampling_grammar(struct llama_sampling * smpl, llama_token_data_array
 
     if (smpl->grammar) {
         llama_sampling_grammar_impl(candidates, *smpl->grammar);
-    }
 
-    smpl->n_grammar++;
+        smpl->n_grammar++;
+    }
 }
 
 void llama_sampling_penalties(
@@ -20178,15 +20218,6 @@ void llama_sampling_penalties(
     }
 
     llama_sampling_penalties_impl(candidates, token_count, penalty_repeat, penalty_freq, penalty_present);
-}
-
-void llama_sampling_cfg(
-        struct llama_sampling * smpl,
-                        float * logits,
-                        float * logits_guidance) {
-    time_meas tm(smpl->t_sample_us);
-
-    llama_sampling_cfg_impl(*smpl, logits, logits_guidance);
 }
 
 llama_token llama_sampling_sample_mirostat(struct llama_sampling * smpl, llama_token_data_array * candidates) {

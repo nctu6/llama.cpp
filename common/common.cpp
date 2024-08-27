@@ -310,7 +310,6 @@ bool gpt_params_parse_ex(int argc, char ** argv, gpt_params & params) {
         string_process_escapes(params.prompt);
         string_process_escapes(params.input_prefix);
         string_process_escapes(params.input_suffix);
-        string_process_escapes(sparams.cfg_negative_prompt);
         for (auto & antiprompt : params.antiprompt) {
             string_process_escapes(antiprompt);
         }
@@ -321,8 +320,8 @@ bool gpt_params_parse_ex(int argc, char ** argv, gpt_params & params) {
         params.kv_overrides.back().key[0] = 0;
     }
 
-    if (params.sparams.seed == LLAMA_DEFAULT_SEED) {
-        params.sparams.seed = time(NULL);
+    if (sparams.seed == LLAMA_DEFAULT_SEED) {
+        sparams.seed = time(NULL);
     }
 
     return true;
@@ -663,30 +662,6 @@ bool gpt_params_find_arg(int argc, char ** argv, const std::string & arg, gpt_pa
     if (arg == "--mirostat-ent") {
         CHECK_ARG
         sparams.mirostat_tau = std::stof(argv[i]);
-        return true;
-    }
-    if (arg == "--cfg-negative-prompt") {
-        CHECK_ARG
-        sparams.cfg_negative_prompt = argv[i];
-        return true;
-    }
-    if (arg == "--cfg-negative-prompt-file") {
-        CHECK_ARG
-        std::ifstream file(argv[i]);
-        if (!file) {
-            fprintf(stderr, "error: failed to open file '%s'\n", argv[i]);
-            invalid_param = true;
-            return true;
-        }
-        std::copy(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), back_inserter(sparams.cfg_negative_prompt));
-        if (!sparams.cfg_negative_prompt.empty() && sparams.cfg_negative_prompt.back() == '\n') {
-            sparams.cfg_negative_prompt.pop_back();
-        }
-        return true;
-    }
-    if (arg == "--cfg-scale") {
-        CHECK_ARG
-        sparams.cfg_scale = std::stof(argv[i]);
         return true;
     }
     if (arg == "-b" || arg == "--batch-size") {
@@ -1577,11 +1552,6 @@ void gpt_params_print_usage(int /*argc*/, char ** argv, const gpt_params & param
     options.push_back({ "*",           "       -l TOKEN_ID(+/-)BIAS",   "modifies the likelihood of token appearing in the completion,\n"
                                                                         "i.e. `--logit-bias 15043+1` to increase likelihood of token ' Hello',\n"
                                                                         "or `--logit-bias 15043-1` to decrease likelihood of token ' Hello'" });
-    options.push_back({ "main",        "       --cfg-negative-prompt PROMPT",
-                                                                        "negative prompt to use for guidance (default: '%s')", sparams.cfg_negative_prompt.c_str() });
-    options.push_back({ "main",        "       --cfg-negative-prompt-file FNAME",
-                                                                        "negative prompt file to use for guidance" });
-    options.push_back({ "main",        "       --cfg-scale N",          "strength of guidance (default: %.1f, 1.0 = disable)", (double)sparams.cfg_scale });
     options.push_back({ "main",        "       --chat-template JINJA_TEMPLATE",
                                                                         "set custom jinja chat template (default: template taken from model's metadata)\n"
                                                                         "if suffix/prefix are specified, template will be disabled\n"
@@ -3258,8 +3228,6 @@ void yaml_dump_non_result_info(FILE * stream, const gpt_params & params, const l
 
     fprintf(stream, "alias: %s # default: unknown\n", params.model_alias.c_str());
     fprintf(stream, "batch_size: %d # default: 512\n", params.n_batch);
-    yaml_dump_string_multiline(stream, "cfg_negative_prompt", sparams.cfg_negative_prompt.c_str());
-    fprintf(stream, "cfg_scale: %f # default: 1.0\n", sparams.cfg_scale);
     fprintf(stream, "chunks: %d # default: -1 (unlimited)\n", params.n_chunks);
     fprintf(stream, "color: %s # default: false\n", params.use_color ? "true" : "false");
     fprintf(stream, "ctx_size: %d # default: 512\n", params.n_ctx);

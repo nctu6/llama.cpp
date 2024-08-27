@@ -128,7 +128,7 @@ int main(int argc, char ** argv){
         int i_dft = 0;
         while (true) {
             // sample from the target model
-            llama_token id = llama_sampling_sample(ctx_sampling, ctx, NULL, i_dft);
+            llama_token id = llama_sampling_sample(ctx_sampling, ctx, i_dft);
 
             llama_sampling_accept(ctx_sampling, id, true);
 

@@ -2341,7 +2341,7 @@ struct server_context {
                 }
 
                 completion_token_output result;
-                const llama_token id = llama_sampling_sample(slot.ctx_sampling, ctx, NULL, slot.i_batch - i);
+                const llama_token id = llama_sampling_sample(slot.ctx_sampling, ctx, slot.i_batch - i);
 
                 llama_sampling_accept(slot.ctx_sampling, id, true);
 
@@ -2354,12 +2354,12 @@ struct server_context {
 
                 result.tok = id;
 
-                const llama_token_data_array cur_p = { slot.ctx_sampling->cur.data(), slot.ctx_sampling->cur.size(), false };
+                const auto * cur_p = llama_sampling_get_candidates(slot.ctx_sampling->smpl);
 
                 for (size_t i = 0; i < (size_t) slot.sparams.n_probs; ++i) {
                     result.probs.push_back({
-                        cur_p.data[i].id,
-                        i >= cur_p.size ? 0.0f : cur_p.data[i].p,
+                        cur_p->data[i].id,
+                        i >= cur_p->size ? 0.0f : cur_p->data[i].p,
                     });
                 }
 

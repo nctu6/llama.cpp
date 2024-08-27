@@ -29,7 +29,6 @@ struct llama_sampling_context * llama_sampling_init(const struct gpt_sampling_pa
         lp.mirostat          = params.mirostat;
         lp.mirostat_tau      = params.mirostat_tau;
         lp.mirostat_eta      = params.mirostat_eta;
-        lp.cfg_scale         = params.cfg_scale;
         lp.penalize_nl       = params.penalize_nl;
         lp.ignore_eos        = params.ignore_eos;
 
@@ -51,9 +50,6 @@ void llama_sampling_free(struct llama_sampling_context * ctx) {
 
 void llama_sampling_reset(llama_sampling_context * ctx) {
     llama_sampling_reset(ctx->smpl);
-
-    ctx->cur.clear();
-    ctx->org.clear();
 }
 
 void llama_sampling_cp(llama_sampling_context * src, llama_sampling_context * dst) {
@@ -219,61 +215,11 @@ static void sampler_queue(
     }
 }
 
-llama_token_data_array llama_sampling_prepare(
+void llama_sampling_prepare(
         struct llama_sampling_context * ctx_sampling,
         struct llama_context * ctx_main,
-        struct llama_context * ctx_cfg,
         int idx) {
-    const gpt_sampling_params & params = ctx_sampling->params;
-
-    auto & cur = ctx_sampling->cur;
-
-    // Get a pointer to the logits
-    float * logits = llama_get_logits_ith(ctx_main, idx);
-
-    // apply params.logit_bias map
-    for (const auto & logit_bias : params.logit_bias) {
-        logits[logit_bias.token] += logit_bias.bias;
-    }
-
-    if (params.ignore_eos) {
-        logits[llama_token_eos(llama_get_model(ctx_main))] = -INFINITY;
-    }
-
-    llama_sampling * smpl = ctx_sampling->smpl;
-
-    if (ctx_cfg) {
-        float * logits_guidance = llama_get_logits_ith(ctx_cfg, idx);
-        llama_sampling_cfg(smpl, logits, logits_guidance);
-    }
-
-    const int n_vocab = llama_n_vocab(llama_get_model(ctx_main));
-
-    cur.resize(n_vocab);
-
-    for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
-        cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
-    }
-
-    llama_token_data_array cur_p = { cur.data(), cur.size(), false };
-
-    // apply penalties
-    {
-        const float nl_logit = logits[llama_token_nl(llama_get_model(ctx_main))];
-
-        llama_sampling_penalties(smpl, &cur_p);
-
-        if (!params.penalize_nl) {
-            for (size_t idx = 0; idx < cur_p.size; idx++) {
-                if (cur_p.data[idx].id == llama_token_nl(llama_get_model(ctx_main))) {
-                    cur_p.data[idx].logit = nl_logit;
-                    break;
-                }
-            }
-        }
-    }
-
-    return cur_p;
+    llama_sampling_set_logits(ctx_sampling->smpl, llama_get_logits_ith(ctx_main, idx));
 }
 
 static llama_token llama_sampling_sample(
@@ -325,41 +271,14 @@ static llama_token llama_sampling_sample(
 llama_token llama_sampling_sample(
         struct llama_sampling_context * ctx_sampling,
         struct llama_context * ctx_main,
-        struct llama_context * ctx_cfg,
         int idx) {
-    llama_token_data_array cur_p = llama_sampling_prepare(ctx_sampling, ctx_main, ctx_cfg, idx);
+    llama_sampling_prepare(ctx_sampling, ctx_main, idx);
 
-    if (ctx_sampling->params.grammar.empty()) {
-        return llama_sampling_sample(ctx_sampling, &cur_p);
-    }
+    auto * cur_p = llama_sampling_get_candidates(ctx_sampling->smpl);
 
-    // TODO: this logic is confusing, try to figure out a better way to handle this
+    llama_sampling_grammar(ctx_sampling->smpl, cur_p);
 
-    // store the original candidates
-    ctx_sampling->org = ctx_sampling->cur;
-    llama_token_data_array org_p = { ctx_sampling->org.data(), ctx_sampling->org.size(), false };
-
-    llama_token id = llama_sampling_sample(ctx_sampling, &cur_p);
-
-    // Create an array with a single token data element for the sampled id
-    llama_token_data       single_token_data       = { id, 1.0f, 0.0f };
-    llama_token_data_array single_token_data_array = { &single_token_data, 1, false };
-
-    // Apply grammar constraints to the single token
-    llama_sampling_grammar(ctx_sampling->smpl, &single_token_data_array);
-
-    // Check if the token is valid according to the grammar by seeing if its logit has been set to -INFINITY
-    const bool is_valid = single_token_data_array.data[0].logit != -INFINITY;
-
-    if (!is_valid) {
-        llama_sampling_grammar(ctx_sampling->smpl, &org_p);
-
-        id = llama_sampling_sample(ctx_sampling, &org_p);
-
-        ctx_sampling->cur = std::move(ctx_sampling->org);
-    }
-
-    return id;
+    return llama_sampling_sample(ctx_sampling, cur_p);
 }
 
 void llama_sampling_accept(

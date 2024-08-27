@@ -230,7 +230,10 @@ int main(int argc, char ** argv) {
                 if (params.sparams.temp > 0) {
                     // stochastic verification
 
-                    llama_token_data_array dist_tgt = llama_sampling_prepare(ctx_sampling, ctx_tgt, NULL, drafts[s_keep].i_batch_tgt[i_dft]);
+                    llama_sampling_prepare(ctx_sampling, ctx_tgt, drafts[s_keep].i_batch_tgt[i_dft]);
+
+                    auto & dist_tgt = *llama_sampling_get_candidates(ctx_sampling->smpl);
+
                     llama_sampling_grammar(ctx_sampling->smpl, &dist_tgt);
                     llama_sampling_softmax(ctx_sampling->smpl, &dist_tgt);
 
@@ -341,7 +344,7 @@ int main(int argc, char ** argv) {
 
                     // sample from the target model
                     LOG("sampling target: s_keep = %3d, i_dft = %3d, i_batch_tgt = %3d\n", s_keep, i_dft, drafts[s_keep].i_batch_tgt[i_dft]);
-                    token_id = llama_sampling_sample(ctx_sampling, ctx_tgt, NULL, drafts[s_keep].i_batch_tgt[i_dft]);
+                    token_id = llama_sampling_sample(ctx_sampling, ctx_tgt, drafts[s_keep].i_batch_tgt[i_dft]);
 
                     llama_sampling_accept(ctx_sampling, token_id, true);
 
@@ -462,20 +465,20 @@ int main(int argc, char ** argv) {
                     continue;
                 }
 
-                llama_sampling_sample(drafts[s].ctx_sampling, ctx_dft, NULL, drafts[s].i_batch_dft);
+                llama_sampling_sample(drafts[s].ctx_sampling, ctx_dft, drafts[s].i_batch_dft);
 
-                const auto & cur_p = drafts[s].ctx_sampling->cur;
+                const auto * cur_p = llama_sampling_get_candidates(drafts[s].ctx_sampling->smpl);
 
-                for (int k = 0; k < std::min(n_seq_dft + 3, (int) cur_p.size()); ++k) {
+                for (int k = 0; k < std::min(n_seq_dft + 3, (int) cur_p->size); ++k) {
                     LOG(" - draft candidate %3d for seq %3d, pos %3d: %6d (%8.3f) '%s'\n",
-                            k, s, i, cur_p[k].id, cur_p[k].p, llama_token_to_piece(ctx_dft, cur_p[k].id).c_str());
+                            k, s, i, cur_p->data[k].id, cur_p->data[k].p, llama_token_to_piece(ctx_dft, cur_p->data[k].id).c_str());
                 }
 
                 std::vector<int> sa(1, s);
 
                 // attempt to split the branch if the probability is high enough
                 for (int f = 1; f < 8; ++f) {
-                    if (n_seq_cur < n_seq_dft && cur_p[f].p > p_split) {
+                    if (n_seq_cur < n_seq_dft && cur_p->data[f].p > p_split) {
                         LOG("splitting seq %3d into %3d\n", s, n_seq_cur);
 
                         llama_kv_cache_seq_rm(ctx_dft,    n_seq_cur, -1, -1);
@@ -514,7 +517,7 @@ int main(int argc, char ** argv) {
 
                 // add drafted token for each sequence
                 for (int is = 0; is < (int) sa.size(); ++is) {
-                    const llama_token id = cur_p[is].id;
+                    const llama_token id = cur_p->data[is].id;
 
                     const int s = sa[is];
 
@@ -522,7 +525,7 @@ int main(int argc, char ** argv) {
 
                     drafts[s].tokens.push_back(id);
                     // save cur_p.data into drafts[s].dists
-                    drafts[s].dists.push_back(cur_p);
+                    drafts[s].dists.push_back({cur_p->data, cur_p->data + cur_p->size});
 
                     // add unique drafted tokens to the target batch
                     drafts[s].i_batch_tgt.push_back(batch_tgt.n_tokens);

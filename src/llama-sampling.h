@@ -41,6 +41,10 @@ struct llama_sampling {
     mutable int32_t n_sample  = 0;
     mutable int32_t n_grammar = 0;
     mutable int32_t n_accept  = 0;
+
+    std::vector<llama_token_data> cur;
+
+    llama_token_data_array cur_p;
 };
 
 //
@@ -76,11 +80,6 @@ void llama_sampling_penalties_impl(
                         float   penalty_repeat,
                         float   penalty_freq,
                         float   penalty_present);
-
-void llama_sampling_cfg_impl(
-        struct llama_sampling & smpl,
-                        float * logits,
-                        float * logits_guidance);
 
 /// @details Mirostat 1.0 algorithm described in the paper https://arxiv.org/abs/2007.14966. Uses tokens instead of words.
 /// @param candidates A vector of `llama_token_data` containing the candidate tokens, their probabilities (p), and log-odds (logit) for the current position in the generated text.

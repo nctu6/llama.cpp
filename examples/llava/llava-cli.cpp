@@ -43,7 +43,7 @@ static bool eval_string(struct llama_context * ctx_llama, const char* str, int n
 static const char * sample(struct llama_sampling_context * ctx_sampling,
                            struct llama_context * ctx_llama,
                            int * n_past) {
-    const llama_token id = llama_sampling_sample(ctx_sampling, ctx_llama, NULL);
+    const llama_token id = llama_sampling_sample(ctx_sampling, ctx_llama);
     llama_sampling_accept(ctx_sampling, id, true);
     static std::string ret;
     if (llama_token_is_eog(llama_get_model(ctx_llama), id)) {

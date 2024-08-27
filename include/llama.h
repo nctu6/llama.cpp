@@ -1016,13 +1016,18 @@ extern "C" {
 
     LLAMA_API struct llama_sampling * llama_sampling_cp(const struct llama_sampling * smpl);
 
-    //LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root);
     LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl);
 
-    // Sets the current rng seed.
     LLAMA_API void llama_sampling_set_rng_seed  (struct llama_sampling * smpl, uint32_t seed);
     LLAMA_API void llama_sampling_set_grammar   (struct llama_sampling * smpl, const char * grammar_str, const char * grammar_root);
     LLAMA_API void llama_sampling_set_logit_bias(struct llama_sampling * smpl, int32_t n_logit_bias, const llama_logit_bias * logit_bias);
+
+    LLAMA_API void llama_sampling_set_logits(
+            struct llama_sampling * smpl,
+                      const float * logits);
+
+    LLAMA_API llama_token_data_array * llama_sampling_get_candidates(
+            struct llama_sampling * smpl);
 
     /// @details Sorts candidate tokens by their logits in descending order and calculate probabilities based on logits.
     LLAMA_API void llama_sampling_softmax(
@@ -1069,15 +1074,6 @@ extern "C" {
     LLAMA_API void llama_sampling_penalties(
             struct llama_sampling * smpl,
            llama_token_data_array * candidates);
-
-    /// @details Apply classifier-free guidance to the logits as described in academic paper "Stay on topic with Classifier-Free Guidance" https://arxiv.org/abs/2306.17806
-    /// @param logits Logits extracted from the original generation context.
-    /// @param logits_guidance Logits extracted from a separate context from the same model. Other than a negative prompt at the beginning, it should have all generated and user input tokens copied from the main context.
-    /// @param scale Guidance strength. 1.0f means no guidance. Higher values mean stronger guidance.
-    LLAMA_API void llama_sampling_cfg(
-            struct llama_sampling * smpl,
-                            float * logits,
-                            float * logits_guidance);
 
     /// @details Mirostat algorithm described in the paper https://arxiv.org/abs/2007.14966. Uses tokens instead of words.
     LLAMA_API llama_token llama_sampling_sample_mirostat(

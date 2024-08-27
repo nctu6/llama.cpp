@@ -511,23 +511,6 @@ void llama_sampling_penalties_impl(
     candidates->sorted = false;
 }
 
-void llama_sampling_cfg_impl(
-        struct llama_sampling & smpl,
-                        float * logits,
-                        float * logits_guidance) {
-    const auto n_vocab = smpl.vocab.n_vocab;
-
-    llama_log_softmax(logits, n_vocab);
-    llama_log_softmax(logits_guidance, n_vocab);
-
-    for (uint32_t i = 0; i < n_vocab; ++i) {
-              auto & l = logits[i];
-        const auto & g = logits_guidance[i];
-
-        l = smpl.params.cfg_scale * (l - g) + g;
-    }
-}
-
 llama_token llama_sampling_sample_mirostat_impl(struct llama_token_data_array * candidates, std::mt19937 & rng, float tau, float eta, int32_t m, int32_t n_vocab, float & mu) {
     llama_sampling_softmax_impl(candidates);
 

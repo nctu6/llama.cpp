@@ -50,11 +50,6 @@ typedef struct gpt_sampling_params {
 
     std::string grammar;  // optional BNF-like grammar to constrain sampling
 
-    // Classifier-Free Guidance
-    // https://arxiv.org/abs/2306.17806
-    std::string cfg_negative_prompt; // string to help guidance
-    float       cfg_scale     = 1.f; // how strong is guidance
-
     std::vector<llama_logit_bias> logit_bias; // logit biases to apply
 } gpt_sampling_params;
 
@@ -65,9 +60,6 @@ struct llama_sampling_context {
     gpt_sampling_params params;
 
     llama_sampling * smpl;
-
-    std::vector<llama_token_data> cur;
-    std::vector<llama_token_data> org;
 };
 
 // Create a new sampling context instance.
@@ -101,11 +93,10 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
 std::vector<llama_sampler_type> llama_sampling_types_from_chars(const std::string & names_string);
 
 // Prepares and adjusts the set of token candidates for sampling based on penalties, biases, and sampling parameters.
-llama_token_data_array llama_sampling_prepare(
+void llama_sampling_prepare(
         struct llama_sampling_context * ctx_sampling,
         struct llama_context * ctx_main,
-        struct llama_context * ctx_cfg,
-        int idx = 0);
+        int idx);
 
 // this is a common sampling function used across the examples for convenience
 // it can serve as a starting point for implementing your own sampling function
@@ -117,7 +108,6 @@ llama_token_data_array llama_sampling_prepare(
 //  - ctx_sampling: sampling-specific context
 //
 // optional:
-//  - ctx_cfg:      context to use for classifier-free guidance
 //  - idx:          sample from llama_get_logits_ith(ctx, idx)
 //
 // returns:
@@ -131,7 +121,6 @@ llama_token_data_array llama_sampling_prepare(
 llama_token llama_sampling_sample(
         struct llama_sampling_context * ctx_sampling,
         struct llama_context * ctx_main,
-        struct llama_context * ctx_cfg,
         int idx = -1);
 
 void llama_sampling_accept(
