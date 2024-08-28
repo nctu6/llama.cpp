@@ -532,7 +532,7 @@ llama_token llama_sampling_sample_mirostat_impl(struct llama_token_data_array * 
 
     // Sample the next word X using top-k sampling
     llama_sampling_top_k_impl(candidates, int(k), 1);
-    llama_token X = llama_sampling_sample_impl(candidates, rng);
+    llama_token X = llama_sampling_sample_dist_impl(candidates, rng);
 
     // Compute error as the difference between observed surprise and target surprise value
     size_t X_idx = std::distance(candidates->data, std::find_if(candidates->data, candidates->data + candidates->size, [&](const llama_token_data & candidate) {
@@ -563,7 +563,7 @@ llama_token llama_sampling_sample_mirostat_v2_impl(struct llama_token_data_array
     llama_sampling_softmax_impl(candidates);
 
     // Sample the next word X from the remaining words
-    llama_token X = llama_sampling_sample_impl(candidates, rng);
+    llama_token X = llama_sampling_sample_dist_impl(candidates, rng);
 
     // Compute error as the difference between observed surprise and target surprise value
     size_t X_idx = std::distance(candidates->data, std::find_if(candidates->data, candidates->data + candidates->size, [&](const llama_token_data & candidate) {
@@ -589,18 +589,19 @@ llama_token llama_sampling_sample_greedy_impl(llama_token_data_array * candidate
     return result;
 }
 
-llama_token llama_sampling_sample_impl(struct llama_token_data_array * candidates, std::mt19937 & rng) {
+llama_token llama_sampling_sample_dist_impl(struct llama_token_data_array * candidates, std::mt19937 & rng) {
     llama_sampling_softmax_impl(candidates);
 
     std::vector<float> probs;
     probs.reserve(candidates->size);
+
     for (size_t i = 0; i < candidates->size; ++i) {
         probs.push_back(candidates->data[i].p);
     }
 
     std::discrete_distribution<> dist(probs.begin(), probs.end());
-    int idx = dist(rng);
 
+    const int idx = dist(rng);
     llama_token result = candidates->data[idx].id;
 
     return result;

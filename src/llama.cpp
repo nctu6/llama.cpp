@@ -20260,10 +20260,10 @@ llama_token llama_sampling_sample_greedy(struct llama_sampling * smpl, llama_tok
     return res;
 }
 
-llama_token llama_sampling_sample(struct llama_sampling * smpl, llama_token_data_array * candidates) {
+llama_token llama_sampling_sample_dist(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
-    auto res = llama_sampling_sample_impl(candidates, smpl->rng);
+    auto res = llama_sampling_sample_dist_impl(candidates, smpl->rng);
 
     smpl->n_sample++;
 

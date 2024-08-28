@@ -345,7 +345,7 @@ int main(int argc, char ** argv) {
 
     std::vector<llama_token> embd;
 
-    ctx_sampling = llama_sampling_init(sparams, model);
+    ctx_sampling = llama_sampling_init(model, sparams);
 
     while (n_remain != 0 || params.interactive) {
         // predict

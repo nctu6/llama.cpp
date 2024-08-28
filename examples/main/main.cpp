@@ -494,7 +494,7 @@ int main(int argc, char ** argv) {
         antiprompt_ids.emplace_back(::llama_tokenize(ctx, antiprompt, false, true));
     }
 
-    ctx_sampling = llama_sampling_init(sparams, model);
+    ctx_sampling = llama_sampling_init(model, sparams);
     if (!ctx_sampling) {
         fprintf(stderr, "%s: failed to initialize sampling subsystem\n", __func__);
         exit(1);

@@ -1086,8 +1086,8 @@ extern "C" {
             struct llama_sampling * smpl,
            llama_token_data_array * candidates);
 
-    /// @details Randomly selects a token from the candidates based on their probabilities
-    LLAMA_API llama_token llama_sampling_sample(
+    /// @details Randomly selects a token from the candidates based on their probability distribution.
+    LLAMA_API llama_token llama_sampling_sample_dist(
             struct llama_sampling * smpl,
            llama_token_data_array * candidates);
 

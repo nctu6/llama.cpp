@@ -97,7 +97,7 @@ llama_token llama_sampling_sample_mirostat_impl   (struct llama_token_data_array
 llama_token llama_sampling_sample_mirostat_v2_impl(struct llama_token_data_array * candidates, std::mt19937 & rng, float tau, float eta, float & mu);
 
 llama_token llama_sampling_sample_greedy_impl     (struct llama_token_data_array * candidates);
-llama_token llama_sampling_sample_impl            (struct llama_token_data_array * candidates, std::mt19937 & rng);
+llama_token llama_sampling_sample_dist_impl       (struct llama_token_data_array * candidates, std::mt19937 & rng);
 
 void llama_sampling_accept_impl(struct llama_sampling & smpl, llama_token token, bool apply_grammar);
 

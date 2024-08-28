@@ -176,7 +176,7 @@ int main(int argc, char ** argv) {
     bool has_eos = false;
 
     // target model sampling context (reuse the llama_context's sampling instance)
-    struct llama_sampling_context * ctx_sampling = llama_sampling_init(params.sparams, model_tgt);
+    struct llama_sampling_context * ctx_sampling = llama_sampling_init(model_tgt, params.sparams);
 
     // draft sequence data
     std::vector<seq_draft> drafts(n_seq_dft);
@@ -187,7 +187,7 @@ int main(int argc, char ** argv) {
 
     for (int s = 0; s < n_seq_dft; ++s) {
         // allocate llama_sampling for each draft sequence
-        drafts[s].ctx_sampling = llama_sampling_init(params.sparams, model_dft);
+        drafts[s].ctx_sampling = llama_sampling_init(model_dft, params.sparams);
     }
 
     llama_batch batch_dft = llama_batch_init(params.n_ctx, 0, 1);
@@ -334,7 +334,7 @@ int main(int argc, char ** argv) {
                         // all drafted tokens were rejected
                         // sample from the target model
                         LOG("all drafted tokens were rejected, sampling from residual distribution\n");
-                        token_id = llama_sampling_sample(ctx_sampling->smpl, &dist_tgt);
+                        token_id = llama_sampling_sample_dist(ctx_sampling->smpl, &dist_tgt);
                         llama_sampling_accept(ctx_sampling, token_id, true);
                         token_str = llama_token_to_piece(ctx_tgt, token_id);
                     }

@@ -2,39 +2,38 @@
 
 #include "common.h"
 
-struct llama_sampling_context * llama_sampling_init(const struct gpt_sampling_params & params, const struct llama_model * model) {
+struct llama_sampling_context * llama_sampling_init(const struct llama_model * model, const struct gpt_sampling_params & params) {
     struct llama_sampling_context * result = new llama_sampling_context();
 
     result->params = params;
 
     {
-        auto lp = llama_sampling_default_params();
+        auto lparams = llama_sampling_default_params();
 
-        lp.seed              = params.seed;
-        lp.n_prev            = params.n_prev;
-        lp.n_probs           = params.n_probs;
-        lp.min_keep          = params.min_keep;
-        lp.top_k             = params.top_k;
-        lp.top_p             = params.top_p;
-        lp.min_p             = params.min_p;
-        lp.tfs_z             = params.tfs_z;
-        lp.typical_p         = params.typical_p;
-        lp.temp              = params.temp;
-        lp.dynatemp_range    = params.dynatemp_range;
-        lp.dynatemp_exponent = params.dynatemp_exponent;
-        lp.penalty_last_n    = params.penalty_last_n;
-        lp.penalty_repeat    = params.penalty_repeat;
-        lp.penalty_freq      = params.penalty_freq;
-        lp.penalty_present   = params.penalty_present;
-        lp.mirostat          = params.mirostat;
-        lp.mirostat_tau      = params.mirostat_tau;
-        lp.mirostat_eta      = params.mirostat_eta;
-        lp.penalize_nl       = params.penalize_nl;
-        lp.ignore_eos        = params.ignore_eos;
+        lparams.seed              = params.seed;
+        lparams.n_prev            = params.n_prev;
+        lparams.n_probs           = params.n_probs;
+        lparams.min_keep          = params.min_keep;
+        lparams.top_k             = params.top_k;
+        lparams.top_p             = params.top_p;
+        lparams.min_p             = params.min_p;
+        lparams.tfs_z             = params.tfs_z;
+        lparams.typical_p         = params.typical_p;
+        lparams.temp              = params.temp;
+        lparams.dynatemp_range    = params.dynatemp_range;
+        lparams.dynatemp_exponent = params.dynatemp_exponent;
+        lparams.penalty_last_n    = params.penalty_last_n;
+        lparams.penalty_repeat    = params.penalty_repeat;
+        lparams.penalty_freq      = params.penalty_freq;
+        lparams.penalty_present   = params.penalty_present;
+        lparams.mirostat          = params.mirostat;
+        lparams.mirostat_tau      = params.mirostat_tau;
+        lparams.mirostat_eta      = params.mirostat_eta;
+        lparams.penalize_nl       = params.penalize_nl;
+        lparams.ignore_eos        = params.ignore_eos;
 
-        result->smpl = llama_sampling_init(model, lp);
+        result->smpl = llama_sampling_init(model, lparams);
 
-        llama_sampling_set_rng_seed  (result->smpl, params.seed);
         llama_sampling_set_grammar   (result->smpl, params.grammar.c_str(), "root");
         llama_sampling_set_logit_bias(result->smpl, params.logit_bias.size(), params.logit_bias.data());
     }
@@ -248,7 +247,7 @@ static llama_token llama_sampling_sample(
         } else {
             sampler_queue(ctx_sampling, cur_p);
 
-            id = llama_sampling_sample(smpl, cur_p);
+            id = llama_sampling_sample_dist(smpl, cur_p);
 
             //{
             //    const int n_top = 10;

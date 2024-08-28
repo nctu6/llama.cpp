@@ -104,7 +104,7 @@ int main(int argc, char ** argv){
 
     bool has_eos = false;
 
-    struct llama_sampling_context * ctx_sampling = llama_sampling_init(params.sparams, model);
+    struct llama_sampling_context * ctx_sampling = llama_sampling_init(model, params.sparams);
 
     std::vector<llama_token> draft;
 
