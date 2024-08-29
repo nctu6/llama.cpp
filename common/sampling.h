@@ -30,7 +30,7 @@ typedef struct gpt_sampling_params {
     bool    penalize_nl       = false; // consider newlines as a repeatable token
     bool    ignore_eos        = false;
 
-    std::vector<llama_sampler_type> samplers_sequence = {
+    std::vector<llama_sampler_type> samplers = {
         LLAMA_SAMPLER_TYPE_TOP_K,
         LLAMA_SAMPLER_TYPE_TFS_Z,
         LLAMA_SAMPLER_TYPE_TYPICAL_P,
@@ -78,6 +78,7 @@ std::string llama_sampling_print(const gpt_sampling_params & params);
 // Print sampling order into a string
 std::string llama_sampling_order_print(const gpt_sampling_params & params);
 
+char        llama_sampling_type_to_chr(llama_sampler_type sampler_type);
 std::string llama_sampling_type_to_str(llama_sampler_type sampler_type);
 
 std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vector<std::string> & names, bool allow_alt_names);

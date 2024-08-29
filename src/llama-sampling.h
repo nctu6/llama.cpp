@@ -27,9 +27,11 @@ struct llama_sampling {
 
     const struct llama_vocab & vocab;
 
-    struct llama_grammar * grammar = nullptr;
+    std::vector<llama_sampler_type> samplers;
 
     ring_buffer<llama_token> prev;
+
+    struct llama_grammar * grammar = nullptr;
 
     // mirostat sampler state
     float mirostat_mu;

@@ -1039,17 +1039,17 @@ struct server_context {
         }
 
         {
-            const auto & samplers_sequence = data.find("samplers");
-            if (samplers_sequence != data.end() && samplers_sequence->is_array()) {
+            const auto & samplers = data.find("samplers");
+            if (samplers != data.end() && samplers->is_array()) {
                 std::vector<std::string> sampler_names;
-                for (const auto & sampler_name : *samplers_sequence) {
+                for (const auto & sampler_name : *samplers) {
                     if (sampler_name.is_string()) {
                         sampler_names.emplace_back(sampler_name);
                     }
                 }
-                slot.sparams.samplers_sequence = llama_sampling_types_from_names(sampler_names, false);
+                slot.sparams.samplers = llama_sampling_types_from_names(sampler_names, false);
             } else {
-                slot.sparams.samplers_sequence = default_sparams.samplers_sequence;
+                slot.sparams.samplers = default_sparams.samplers;
             }
         }
 
@@ -1265,10 +1265,10 @@ struct server_context {
     }
 
     json get_formated_generation(const server_slot & slot) const {
-        std::vector<std::string> samplers_sequence;
-        samplers_sequence.reserve(slot.sparams.samplers_sequence.size());
-        for (const auto & sampler_type : slot.sparams.samplers_sequence) {
-            samplers_sequence.emplace_back(llama_sampling_type_to_str(sampler_type));
+        std::vector<std::string> samplers;
+        samplers.reserve(slot.sparams.samplers.size());
+        for (const auto & sampler : slot.sparams.samplers) {
+            samplers.emplace_back(llama_sampling_type_to_str(sampler));
         }
 
         return json {
@@ -1302,7 +1302,7 @@ struct server_context {
             {"n_probs",                   slot.sparams.n_probs},
             {"min_keep",                  slot.sparams.min_keep},
             {"grammar",                   slot.sparams.grammar},
-            {"samplers",                  samplers_sequence},
+            {"samplers",                  samplers},
         };
     }
 

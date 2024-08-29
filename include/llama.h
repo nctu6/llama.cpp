@@ -400,7 +400,7 @@ extern "C" {
         float    mirostat_tau;      // target entropy
         float    mirostat_eta;      // learning rate
 
-        // samples
+        // samplers
         int32_t n_samplers;
         enum llama_sampler_type samplers[LLAMA_MAX_SAMPLERS];
 

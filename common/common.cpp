@@ -584,12 +584,12 @@ bool gpt_params_find_arg(int argc, char ** argv, const std::string & arg, gpt_pa
     if (arg == "--samplers") {
         CHECK_ARG
         const auto sampler_names = string_split(argv[i], ';');
-        sparams.samplers_sequence = llama_sampling_types_from_names(sampler_names, true);
+        sparams.samplers = llama_sampling_types_from_names(sampler_names, true);
         return true;
     }
     if (arg == "--sampling-seq") {
         CHECK_ARG
-        sparams.samplers_sequence = llama_sampling_types_from_chars(argv[i]);
+        sparams.samplers = llama_sampling_types_from_chars(argv[i]);
         return true;
     }
     if (arg == "--top-p") {
@@ -1438,9 +1438,9 @@ void gpt_params_print_usage(int /*argc*/, char ** argv, const gpt_params & param
 
     std::string sampler_type_chars;
     std::string sampler_type_names;
-    for (const auto sampler_type : sparams.samplers_sequence) {
-        sampler_type_chars += static_cast<char>(sampler_type);
-        sampler_type_names += llama_sampling_type_to_str(sampler_type) + ";";
+    for (const auto & sampler : sparams.samplers) {
+        sampler_type_chars += llama_sampling_type_to_chr(sampler);
+        sampler_type_names += llama_sampling_type_to_str(sampler) + ";";
     }
     sampler_type_names.pop_back();
 

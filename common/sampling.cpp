@@ -32,6 +32,8 @@ struct llama_sampling_context * llama_sampling_init(const struct llama_model * m
         lparams.penalize_nl       = params.penalize_nl;
         lparams.ignore_eos        = params.ignore_eos;
 
+        lparams.n_samplers = params.samplers.size();
+
         result->smpl = llama_sampling_init(model, lparams);
 
         llama_sampling_set_grammar   (result->smpl, params.grammar.c_str(), "root");
@@ -101,7 +103,7 @@ std::string llama_sampling_print(const gpt_sampling_params & params) {
 std::string llama_sampling_order_print(const gpt_sampling_params & params) {
     std::string result = "CFG -> Penalties ";
     if (params.mirostat == 0) {
-        for (auto sampler_type : params.samplers_sequence) {
+        for (auto sampler_type : params.samplers) {
             const auto sampler_type_name = llama_sampling_type_to_str(sampler_type);
             if (!sampler_type_name.empty()) {
                 result += "-> " + sampler_type_name + " ";
@@ -112,6 +114,18 @@ std::string llama_sampling_order_print(const gpt_sampling_params & params) {
     }
 
     return result;
+}
+
+char llama_sampling_type_to_chr(llama_sampler_type sampler_type) {
+    switch (sampler_type) {
+        case LLAMA_SAMPLER_TYPE_TOP_K:       return 'k';
+        case LLAMA_SAMPLER_TYPE_TFS_Z:       return 'f';
+        case LLAMA_SAMPLER_TYPE_TYPICAL_P:   return 'y';
+        case LLAMA_SAMPLER_TYPE_TOP_P:       return 'p';
+        case LLAMA_SAMPLER_TYPE_MIN_P:       return 'm';
+        case LLAMA_SAMPLER_TYPE_TEMPERATURE: return 't';
+        default : return '?';
+    }
 }
 
 std::string llama_sampling_type_to_str(llama_sampler_type sampler_type) {
@@ -128,26 +142,26 @@ std::string llama_sampling_type_to_str(llama_sampler_type sampler_type) {
 
 std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vector<std::string> & names, bool allow_alt_names) {
     std::unordered_map<std::string, llama_sampler_type> sampler_canonical_name_map {
-        {"top_k",       LLAMA_SAMPLER_TYPE_TOP_K},
-        {"top_p",       LLAMA_SAMPLER_TYPE_TOP_P},
-        {"typical_p",   LLAMA_SAMPLER_TYPE_TYPICAL_P},
-        {"min_p",       LLAMA_SAMPLER_TYPE_MIN_P},
-        {"tfs_z",       LLAMA_SAMPLER_TYPE_TFS_Z},
-        {"temperature", LLAMA_SAMPLER_TYPE_TEMPERATURE}
+        { "top_k",       LLAMA_SAMPLER_TYPE_TOP_K },
+        { "top_p",       LLAMA_SAMPLER_TYPE_TOP_P },
+        { "typical_p",   LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "min_p",       LLAMA_SAMPLER_TYPE_MIN_P },
+        { "tfs_z",       LLAMA_SAMPLER_TYPE_TFS_Z },
+        { "temperature", LLAMA_SAMPLER_TYPE_TEMPERATURE },
     };
 
     // since samplers names are written multiple ways
     // make it ready for both system names and input names
     std::unordered_map<std::string, llama_sampler_type> sampler_alt_name_map {
-        {"top-k",       LLAMA_SAMPLER_TYPE_TOP_K},
-        {"top-p",       LLAMA_SAMPLER_TYPE_TOP_P},
-        {"nucleus",     LLAMA_SAMPLER_TYPE_TOP_P},
-        {"typical-p",   LLAMA_SAMPLER_TYPE_TYPICAL_P},
-        {"typical",     LLAMA_SAMPLER_TYPE_TYPICAL_P},
-        {"min-p",       LLAMA_SAMPLER_TYPE_MIN_P},
-        {"tfs-z",       LLAMA_SAMPLER_TYPE_TFS_Z},
-        {"tfs",         LLAMA_SAMPLER_TYPE_TFS_Z},
-        {"temp",        LLAMA_SAMPLER_TYPE_TEMPERATURE}
+        { "top-k",       LLAMA_SAMPLER_TYPE_TOP_K },
+        { "top-p",       LLAMA_SAMPLER_TYPE_TOP_P },
+        { "nucleus",     LLAMA_SAMPLER_TYPE_TOP_P },
+        { "typical-p",   LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "typical",     LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "min-p",       LLAMA_SAMPLER_TYPE_MIN_P },
+        { "tfs-z",       LLAMA_SAMPLER_TYPE_TFS_Z },
+        { "tfs",         LLAMA_SAMPLER_TYPE_TFS_Z },
+        { "temp",        LLAMA_SAMPLER_TYPE_TEMPERATURE },
     };
 
     std::vector<llama_sampler_type> sampler_types;
@@ -172,12 +186,12 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
 
 std::vector<llama_sampler_type> llama_sampling_types_from_chars(const std::string & names_string) {
     std::unordered_map<char, llama_sampler_type> sampler_name_map {
-        {'k', LLAMA_SAMPLER_TYPE_TOP_K},
-        {'p', LLAMA_SAMPLER_TYPE_TOP_P},
-        {'y', LLAMA_SAMPLER_TYPE_TYPICAL_P},
-        {'m', LLAMA_SAMPLER_TYPE_MIN_P},
-        {'f', LLAMA_SAMPLER_TYPE_TFS_Z},
-        {'t', LLAMA_SAMPLER_TYPE_TEMPERATURE}
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_TOP_K),       LLAMA_SAMPLER_TYPE_TOP_K },
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_TFS_Z),       LLAMA_SAMPLER_TYPE_TFS_Z },
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_TYPICAL_P),   LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_TOP_P),       LLAMA_SAMPLER_TYPE_TOP_P },
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_MIN_P),       LLAMA_SAMPLER_TYPE_MIN_P },
+        { llama_sampling_type_to_chr(LLAMA_SAMPLER_TYPE_TEMPERATURE), LLAMA_SAMPLER_TYPE_TEMPERATURE }
     };
 
     std::vector<llama_sampler_type> sampler_types;
@@ -199,10 +213,10 @@ static void sampler_queue(
 
     const gpt_sampling_params & params = ctx_sampling->params;
 
-    const std::vector<llama_sampler_type> & samplers_sequence = params.samplers_sequence;
+    const std::vector<llama_sampler_type> & samplers = params.samplers;
 
-    for (auto sampler_type : samplers_sequence) {
-        switch (sampler_type) {
+    for (const auto & sampler : samplers) {
+        switch (sampler) {
             case LLAMA_SAMPLER_TYPE_TOP_K:       llama_sampling_top_k    (smpl, cur_p); break;
             case LLAMA_SAMPLER_TYPE_TFS_Z:       llama_sampling_tail_free(smpl, cur_p); break;
             case LLAMA_SAMPLER_TYPE_TYPICAL_P:   llama_sampling_typical  (smpl, cur_p); break;

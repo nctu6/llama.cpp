@@ -17430,7 +17430,7 @@ struct llama_sampling_params llama_sampling_default_params() {
         /*.mirostat_tau      =*/ 5.00f,
         /*.mirostat_eta      =*/ 0.10f,
         /*.n_samplers        =*/ 3,
-        /*.samplers          =*/ { LLAMA_SAMPLER_TYPE_TOP_K, LLAMA_SAMPLER_TYPE_TOP_P, LLAMA_SAMPLER_TYPE_TEMPERATURE },
+        /*.samplers          =*/ { LLAMA_SAMPLER_TYPE_TEMPERATURE, LLAMA_SAMPLER_TYPE_TOP_K, LLAMA_SAMPLER_TYPE_TOP_P, },
         /*.penalize_nl       =*/ false,
         /*.ignore_eos        =*/ false,
     };

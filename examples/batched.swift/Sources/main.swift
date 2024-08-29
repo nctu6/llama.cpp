@@ -155,7 +155,7 @@ while n_cur <= n_len {
         llama_sampling_top_p(smpl, &candidates_p)
         llama_sampling_temp (smpl, &candidates_p)
 
-        let new_token_id = llama_sampling_sample(smpl, &candidates_p)
+        let new_token_id = llama_sampling_sample_dist(smpl, &candidates_p)
 
         // const llama_token new_token_id = llama_sampling_sample_greedy(smpl, &candidates_p);
 

@@ -40,6 +40,10 @@ struct llama_sampling * llama_sampling_init_impl(const struct llama_vocab & voca
 
     result->prev = ring_buffer<llama_token>(params.n_prev);
 
+    for (int i = 0; i < params.n_samplers; ++i) {
+        result->samplers.push_back(params.samplers[i]);
+    }
+
     llama_sampling_set_rng_seed_impl(*result, params.seed);
 
     return result;
