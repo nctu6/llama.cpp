@@ -230,7 +230,7 @@ int main(int argc, char ** argv) {
                 if (params.sparams.temp > 0) {
                     // stochastic verification
 
-                    llama_sampling_prepare(ctx_sampling, ctx_tgt, drafts[s_keep].i_batch_tgt[i_dft]);
+                    llama_sampling_set_logits(ctx_sampling->smpl, llama_get_logits_ith(ctx_tgt, drafts[s_keep].i_batch_tgt[i_dft]));
 
                     auto & dist_tgt = *llama_sampling_get_candidates(ctx_sampling->smpl);
 
@@ -280,7 +280,7 @@ int main(int argc, char ** argv) {
                             accept = true;
                             token_id = drafts[s].tokens[i_dft];
                             token_str = llama_token_to_piece(ctx_tgt, token_id);
-                            llama_sampling_accept(ctx_sampling, token_id, true);
+                            llama_sampling_accept(ctx_sampling->smpl, token_id, true);
 
                             LOG("draft token %d of sequence %d (%d, '%s') accepted\n", i_dft, s, token_id, token_str.c_str());
                             break;
@@ -335,7 +335,7 @@ int main(int argc, char ** argv) {
                         // sample from the target model
                         LOG("all drafted tokens were rejected, sampling from residual distribution\n");
                         token_id = llama_sampling_sample_dist(ctx_sampling->smpl, &dist_tgt);
-                        llama_sampling_accept(ctx_sampling, token_id, true);
+                        llama_sampling_accept(ctx_sampling->smpl, token_id, true);
                         token_str = llama_token_to_piece(ctx_tgt, token_id);
                     }
 
@@ -346,7 +346,7 @@ int main(int argc, char ** argv) {
                     LOG("sampling target: s_keep = %3d, i_dft = %3d, i_batch_tgt = %3d\n", s_keep, i_dft, drafts[s_keep].i_batch_tgt[i_dft]);
                     token_id = llama_sampling_sample(ctx_sampling, ctx_tgt, drafts[s_keep].i_batch_tgt[i_dft]);
 
-                    llama_sampling_accept(ctx_sampling, token_id, true);
+                    llama_sampling_accept(ctx_sampling->smpl, token_id, true);
 
                     //LOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx_tgt, ctx_sampling->prev).c_str());
 
@@ -521,7 +521,7 @@ int main(int argc, char ** argv) {
 
                     const int s = sa[is];
 
-                    llama_sampling_accept(drafts[s].ctx_sampling, id, true);
+                    llama_sampling_accept(drafts[s].ctx_sampling->smpl, id, true);
 
                     drafts[s].tokens.push_back(id);
                     // save cur_p.data into drafts[s].dists

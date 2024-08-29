@@ -1031,6 +1031,8 @@ extern "C" {
 
     LLAMA_API struct llama_sampling * llama_sampling_cp(const struct llama_sampling * smpl);
 
+    // - clear prev token
+    // - reset grammar state
     LLAMA_API void llama_sampling_reset(struct llama_sampling * smpl);
 
     LLAMA_API void llama_sampling_set_rng_seed  (struct llama_sampling * smpl, uint32_t seed);

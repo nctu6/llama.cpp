@@ -160,7 +160,7 @@ int main(int argc, char ** argv) {
     {
         id = llama_sampling_sample(ctx_sampling, ctx, 0);
 
-        llama_sampling_accept(ctx_sampling, id, true);
+        llama_sampling_accept(ctx_sampling->smpl, id, true);
 
         {
             const std::string token_str = llama_token_to_piece(ctx, id);
@@ -285,7 +285,7 @@ int main(int argc, char ** argv) {
             // sample the next token
             id = llama_sampling_sample(ctx_sampling, ctx, i_batch);
 
-            llama_sampling_accept(ctx_sampling, id, true);
+            llama_sampling_accept(ctx_sampling->smpl, id, true);
 
             // print
             {

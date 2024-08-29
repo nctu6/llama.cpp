@@ -2098,7 +2098,7 @@ struct server_context {
                                 GGML_ASSERT(slot.n_prompt_tokens < slot.n_ctx);
                             }
 
-                            llama_sampling_reset(slot.ctx_sampling);
+                            llama_sampling_reset(slot.ctx_sampling->smpl);
 
                             if (!slot.params.cache_prompt) {
                                 slot.n_past_se = 0;
@@ -2111,7 +2111,7 @@ struct server_context {
 
                                 // push the prompt into the sampling context (do not apply grammar)
                                 for (int i = 0; i < slot.n_past; ++i) {
-                                    llama_sampling_accept(slot.ctx_sampling, slot.cache_tokens[i], false);
+                                    llama_sampling_accept(slot.ctx_sampling->smpl, slot.cache_tokens[i], false);
                                 }
                             }
                         }
@@ -2164,7 +2164,7 @@ struct server_context {
                         slot.n_past_se = 0;
                         slot.ga_i = 0;
                         // TODO: is the system prompt ever in the sampling context?
-                        llama_sampling_reset(slot.ctx_sampling);
+                        llama_sampling_reset(slot.ctx_sampling->smpl);
                     }
 
                     // remove the non-common part from the cache
@@ -2343,7 +2343,7 @@ struct server_context {
                 completion_token_output result;
                 const llama_token id = llama_sampling_sample(slot.ctx_sampling, ctx, slot.i_batch - i);
 
-                llama_sampling_accept(slot.ctx_sampling, id, true);
+                llama_sampling_accept(slot.ctx_sampling->smpl, id, true);
 
                 slot.n_decoded += 1;
                 if (slot.n_decoded == 1) {

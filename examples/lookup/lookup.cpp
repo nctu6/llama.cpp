@@ -130,7 +130,7 @@ int main(int argc, char ** argv){
             // sample from the target model
             llama_token id = llama_sampling_sample(ctx_sampling, ctx, i_dft);
 
-            llama_sampling_accept(ctx_sampling, id, true);
+            llama_sampling_accept(ctx_sampling->smpl, id, true);
 
             const std::string token_str = llama_token_to_piece(ctx, id);
 

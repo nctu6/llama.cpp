@@ -426,8 +426,8 @@ int main(int argc, char ** argv) {
             }
         }
     }
-    LOG_TEE("sampling: \n%s\n", llama_sampling_print(sparams).c_str());
-    LOG_TEE("sampling order: \n%s\n", llama_sampling_order_print(sparams).c_str());
+    LOG_TEE("sampling params: \n%s\n", sparams.print_all().c_str());
+    LOG_TEE("sampling order:  \n%s\n", sparams.print_samplers().c_str());
     LOG_TEE("generate: n_ctx = %d, n_batch = %d, n_predict = %d, n_keep = %d\n", n_ctx, params.n_batch, params.n_predict, params.n_keep);
 
     // group-attention state
@@ -652,7 +652,7 @@ int main(int argc, char ** argv) {
 
             const llama_token id = llama_sampling_sample(ctx_sampling, ctx);
 
-            llama_sampling_accept(ctx_sampling, id, /* apply_grammar= */ true);
+            llama_sampling_accept(ctx_sampling->smpl, id, /* apply_grammar= */ true);
 
             // LOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, ctx_sampling->prev.to_vector()).c_str());
 
@@ -673,7 +673,7 @@ int main(int argc, char ** argv) {
 
                 // push the prompt in the sampling context in order to apply repetition penalties later
                 // for the prompt, we don't apply grammar rules
-                llama_sampling_accept(ctx_sampling, embd_inp[n_consumed], /* apply_grammar= */ false);
+                llama_sampling_accept(ctx_sampling->smpl, embd_inp[n_consumed], /* apply_grammar= */ false);
 
                 ++n_consumed;
                 if ((int) embd.size() >= params.n_batch) {
@@ -872,7 +872,7 @@ int main(int argc, char ** argv) {
 
             if (n_past > 0) {
                 if (is_interacting) {
-                    llama_sampling_reset(ctx_sampling);
+                    llama_sampling_reset(ctx_sampling->smpl);
                 }
                 is_interacting = false;
             }

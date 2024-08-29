@@ -253,7 +253,7 @@ int main(int argc, char ** argv) {
                     client.prompt   = client.input + "\nAssistant:";
                     client.response = "";
 
-                    llama_sampling_reset(client.ctx_sampling);
+                    llama_sampling_reset(client.ctx_sampling->smpl);
 
                     // do not prepend BOS because we have a system prompt!
                     std::vector<llama_token> tokens_prompt;
@@ -343,7 +343,7 @@ int main(int argc, char ** argv) {
 
                 const llama_token id = llama_sampling_sample(client.ctx_sampling, ctx, client.i_batch - i);
 
-                llama_sampling_accept(client.ctx_sampling, id, true);
+                llama_sampling_accept(client.ctx_sampling->smpl, id, true);
 
                 if (client.n_decoded == 1) {
                     // start measuring generation time after the first token to make sure all concurrent clients
