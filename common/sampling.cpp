@@ -18,7 +18,7 @@ struct llama_sampling_context * llama_sampling_init(const struct llama_model * m
         lparams.top_p             = params.top_p;
         lparams.min_p             = params.min_p;
         lparams.tfs_z             = params.tfs_z;
-        lparams.typical_p         = params.typical_p;
+        lparams.typ_p             = params.typ_p;
         lparams.temp              = params.temp;
         lparams.dynatemp_range    = params.dynatemp_range;
         lparams.dynatemp_exponent = params.dynatemp_exponent;
@@ -33,6 +33,9 @@ struct llama_sampling_context * llama_sampling_init(const struct llama_model * m
         lparams.ignore_eos        = params.ignore_eos;
 
         lparams.n_samplers = params.samplers.size();
+        for (int i = 0; i < lparams.n_samplers; i++) {
+            lparams.samplers[i] = params.samplers[i];
+        }
 
         result->smpl = llama_sampling_init(model, lparams);
 
@@ -94,7 +97,7 @@ std::string llama_sampling_print(const gpt_sampling_params & params) {
             "\ttop_k = %d, tfs_z = %.3f, top_p = %.3f, min_p = %.3f, typical_p = %.3f, temp = %.3f\n"
             "\tmirostat = %d, mirostat_lr = %.3f, mirostat_ent = %.3f",
             params.penalty_last_n, params.penalty_repeat, params.penalty_freq, params.penalty_present,
-            params.top_k, params.tfs_z, params.top_p, params.min_p, params.typical_p, params.temp,
+            params.top_k, params.tfs_z, params.top_p, params.min_p, params.typ_p, params.temp,
             params.mirostat, params.mirostat_eta, params.mirostat_tau);
 
     return std::string(result);
@@ -132,7 +135,7 @@ std::string llama_sampling_type_to_str(llama_sampler_type sampler_type) {
     switch (sampler_type) {
         case LLAMA_SAMPLER_TYPE_TOP_K:       return "top_k";
         case LLAMA_SAMPLER_TYPE_TFS_Z:       return "tfs_z";
-        case LLAMA_SAMPLER_TYPE_TYPICAL_P:   return "typical_p";
+        case LLAMA_SAMPLER_TYPE_TYPICAL_P:   return "typ_p";
         case LLAMA_SAMPLER_TYPE_TOP_P:       return "top_p";
         case LLAMA_SAMPLER_TYPE_MIN_P:       return "min_p";
         case LLAMA_SAMPLER_TYPE_TEMPERATURE: return "temperature";
@@ -144,7 +147,7 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
     std::unordered_map<std::string, llama_sampler_type> sampler_canonical_name_map {
         { "top_k",       LLAMA_SAMPLER_TYPE_TOP_K },
         { "top_p",       LLAMA_SAMPLER_TYPE_TOP_P },
-        { "typical_p",   LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "typ_p",       LLAMA_SAMPLER_TYPE_TYPICAL_P },
         { "min_p",       LLAMA_SAMPLER_TYPE_MIN_P },
         { "tfs_z",       LLAMA_SAMPLER_TYPE_TFS_Z },
         { "temperature", LLAMA_SAMPLER_TYPE_TEMPERATURE },
@@ -158,6 +161,8 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
         { "nucleus",     LLAMA_SAMPLER_TYPE_TOP_P },
         { "typical-p",   LLAMA_SAMPLER_TYPE_TYPICAL_P },
         { "typical",     LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "typ-p",       LLAMA_SAMPLER_TYPE_TYPICAL_P },
+        { "typ",         LLAMA_SAMPLER_TYPE_TYPICAL_P },
         { "min-p",       LLAMA_SAMPLER_TYPE_MIN_P },
         { "tfs-z",       LLAMA_SAMPLER_TYPE_TFS_Z },
         { "tfs",         LLAMA_SAMPLER_TYPE_TFS_Z },
@@ -205,29 +210,6 @@ std::vector<llama_sampler_type> llama_sampling_types_from_chars(const std::strin
     return sampler_types;
 }
 
-// no reasons to expose this function in header
-static void sampler_queue(
-          struct llama_sampling_context * ctx_sampling,
-          struct llama_token_data_array * cur_p) {
-    llama_sampling * smpl = ctx_sampling->smpl;
-
-    const gpt_sampling_params & params = ctx_sampling->params;
-
-    const std::vector<llama_sampler_type> & samplers = params.samplers;
-
-    for (const auto & sampler : samplers) {
-        switch (sampler) {
-            case LLAMA_SAMPLER_TYPE_TOP_K:       llama_sampling_top_k    (smpl, cur_p); break;
-            case LLAMA_SAMPLER_TYPE_TFS_Z:       llama_sampling_tail_free(smpl, cur_p); break;
-            case LLAMA_SAMPLER_TYPE_TYPICAL_P:   llama_sampling_typical  (smpl, cur_p); break;
-            case LLAMA_SAMPLER_TYPE_TOP_P:       llama_sampling_top_p    (smpl, cur_p); break;
-            case LLAMA_SAMPLER_TYPE_MIN_P:       llama_sampling_min_p    (smpl, cur_p); break;
-            case LLAMA_SAMPLER_TYPE_TEMPERATURE: llama_sampling_temp     (smpl, cur_p); break;
-            default : break;
-        }
-    }
-}
-
 void llama_sampling_prepare(
         struct llama_sampling_context * ctx_sampling,
         struct llama_context * ctx_main,
@@ -238,47 +220,7 @@ void llama_sampling_prepare(
 static llama_token llama_sampling_sample(
         struct llama_sampling_context * ctx_sampling,
         struct llama_token_data_array * cur_p) {
-    llama_sampling * smpl = ctx_sampling->smpl;
-
-    const gpt_sampling_params & params = ctx_sampling->params;
-
-    const float temp     = params.temp;
-    const int   mirostat = params.mirostat;
-
-    llama_token id = 0;
-
-    if (temp < 0.0f || (temp == 0.0f && params.n_probs > 0)) {
-        // greedy sampling, with probs
-        llama_sampling_softmax(smpl, cur_p);
-        id = cur_p->data[0].id;
-    } else if (temp == 0.0f) {
-        // greedy sampling, no probs
-        id = llama_sampling_sample_greedy(smpl, cur_p);
-    } else {
-        if (mirostat != 0) {
-            llama_sampling_temp(smpl, cur_p);
-            id = llama_sampling_sample_mirostat(smpl, cur_p);
-        } else {
-            sampler_queue(ctx_sampling, cur_p);
-
-            id = llama_sampling_sample_dist(smpl, cur_p);
-
-            //{
-            //    const int n_top = 10;
-            //    LOG("top %d candidates:\n", n_top);
-
-            //    for (int i = 0; i < n_top; i++) {
-            //        const llama_token id = cur_p.data[i].id;
-            //        (void)id; // To avoid a warning that id is unused when logging is disabled.
-            //        LOG(" - %5d: '%12s' (%.3f)\n", id, llama_token_to_piece(smpl, id).c_str(), cur_p.data[i].p);
-            //    }
-            //}
-
-            //LOG("sampled token: %5d: '%s'\n", id, llama_token_to_piece(smpl, id).c_str());
-        }
-    }
-
-    return id;
+    return llama_sampling_sample(ctx_sampling->smpl, cur_p);
 }
 
 llama_token llama_sampling_sample(

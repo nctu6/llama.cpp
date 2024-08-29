@@ -388,7 +388,7 @@ extern "C" {
         float    top_p;             // 1.0 = disabled
         float    min_p;             // 0.0 = disabled
         float    tfs_z;             // 1.0 = disabled
-        float    typical_p;         // 1.0 = disabled
+        float    typ_p;             // typical_p, 1.0 = disabled
         float    temp;              // <= 0.0 to sample greedily, 0.0 to not output probabilities
         float    dynatemp_range;    // 0.0 = disabled
         float    dynatemp_exponent; // controls how entropy maps to temperature in dynamic temperature sampler
@@ -1103,6 +1103,11 @@ extern "C" {
 
     /// @details Randomly selects a token from the candidates based on their probability distribution.
     LLAMA_API llama_token llama_sampling_sample_dist(
+            struct llama_sampling * smpl,
+           llama_token_data_array * candidates);
+
+    /// @details Sample a token using the configured samplers.
+    LLAMA_API llama_token llama_sampling_sample(
             struct llama_sampling * smpl,
            llama_token_data_array * candidates);
 

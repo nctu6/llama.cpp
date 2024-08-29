@@ -16,7 +16,7 @@ typedef struct gpt_sampling_params {
     float   top_p             = 0.95f; // 1.0 = disabled
     float   min_p             = 0.05f; // 0.0 = disabled
     float   tfs_z             = 1.00f; // 1.0 = disabled
-    float   typical_p         = 1.00f; // 1.0 = disabled
+    float   typ_p             = 1.00f; // typical_p, 1.0 = disabled
     float   temp              = 0.80f; // <= 0.0 to sample greedily, 0.0 to not output probabilities
     float   dynatemp_range    = 0.00f; // 0.0 = disabled
     float   dynatemp_exponent = 1.00f; // controls how entropy maps to temperature in dynamic temperature sampler

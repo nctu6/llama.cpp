@@ -17418,7 +17418,7 @@ struct llama_sampling_params llama_sampling_default_params() {
         /*.top_p             =*/ 0.95f,
         /*.min_p             =*/ 0.05f,
         /*.tfs_z             =*/ 1.00f,
-        /*.typical_p         =*/ 1.00f,
+        /*.typ_p             =*/ 1.00f,
         /*.temp              =*/ 0.80f,
         /*.dynatemp_range    =*/ 0.00f,
         /*.dynatemp_exponent =*/ 1.00f,
@@ -20169,7 +20169,7 @@ void llama_sampling_tail_free(struct llama_sampling * smpl, llama_token_data_arr
 void llama_sampling_typical(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
-    llama_sampling_typical_impl(candidates, smpl->params.typical_p, smpl->params.min_keep);
+    llama_sampling_typical_impl(candidates, smpl->params.typ_p, smpl->params.min_keep);
 }
 
 void llama_sampling_temp(struct llama_sampling * smpl, llama_token_data_array * candidates) {
@@ -20265,6 +20265,64 @@ llama_token llama_sampling_sample_dist(struct llama_sampling * smpl, llama_token
     time_meas tm(smpl->t_sample_us);
 
     auto res = llama_sampling_sample_dist_impl(candidates, smpl->rng);
+
+    smpl->n_sample++;
+
+    return res;
+}
+
+llama_token llama_sampling_sample(struct llama_sampling * smpl, llama_token_data_array * candidates) {
+    time_meas tm(smpl->t_sample_us);
+
+    const auto & params = smpl->params;
+
+    const float temp     = params.temp;
+    const int   mirostat = params.mirostat;
+
+    auto & cur_p = candidates;
+
+    llama_token res = 0;
+
+    if (temp < 0.0f || (temp == 0.0f && params.n_probs > 0)) {
+        // greedy sampling, with probs
+        llama_sampling_softmax_impl(cur_p);
+        res = cur_p->data[0].id;
+    } else if (temp == 0.0f) {
+        // greedy sampling, no probs
+        res = llama_sampling_sample_greedy(smpl, cur_p);
+    } else {
+        if (mirostat != 0) {
+            llama_sampling_temp(smpl, cur_p);
+            res = llama_sampling_sample_mirostat(smpl, cur_p);
+        } else {
+            for (const auto & sampler : smpl->samplers) {
+                switch (sampler) {
+                    case LLAMA_SAMPLER_TYPE_TOP_K:       llama_sampling_top_k_impl    (cur_p, smpl->params.top_k, smpl->params.min_keep); break;
+                    case LLAMA_SAMPLER_TYPE_TFS_Z:       llama_sampling_tail_free_impl(cur_p, smpl->params.tfs_z, smpl->params.min_keep); break;
+                    case LLAMA_SAMPLER_TYPE_TYPICAL_P:   llama_sampling_typical_impl  (cur_p, smpl->params.typ_p, smpl->params.min_keep); break;
+                    case LLAMA_SAMPLER_TYPE_TOP_P:       llama_sampling_top_p_impl    (cur_p, smpl->params.top_p, smpl->params.min_keep); break;
+                    case LLAMA_SAMPLER_TYPE_MIN_P:       llama_sampling_min_p_impl    (cur_p, smpl->params.min_p, smpl->params.min_keep); break;
+                    case LLAMA_SAMPLER_TYPE_TEMPERATURE: llama_sampling_temp_impl     (cur_p, temp); break;
+                    default : break;
+                }
+            }
+
+            res = llama_sampling_sample_dist(smpl, cur_p);
+
+            //{
+            //    const int n_top = 10;
+            //    LOG("top %d candidates:\n", n_top);
+
+            //    for (int i = 0; i < n_top; i++) {
+            //        const llama_token id = cur_p.data[i].id;
+            //        (void)id; // To avoid a warning that id is unused when logging is disabled.
+            //        LOG(" - %5d: '%12s' (%.3f)\n", id, llama_token_to_piece(smpl, id).c_str(), cur_p.data[i].p);
+            //    }
+            //}
+
+            //LOG("sampled token: %5d: '%s'\n", res, llama_token_to_piece(smpl, res).c_str());
+        }
+    }
 
     smpl->n_sample++;
 
