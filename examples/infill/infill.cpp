@@ -417,7 +417,7 @@ int main(int argc, char ** argv) {
         embd.clear();
 
         if ((int) embd_inp.size() <= n_consumed && !is_interacting) {
-            const llama_token id = llama_sampling_sample(smpl, ctx);
+            const llama_token id = llama_sampling_sample(smpl, ctx, -1);
 
             llama_sampling_accept(smpl, id, true);
 

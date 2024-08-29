@@ -67,4 +67,4 @@ std::vector<enum llama_sampler_type> llama_sampling_types_from_chars(const std::
 llama_token llama_sampling_sample(
         struct llama_sampling * smpl,
         struct llama_context * ctx,
-        int idx = -1);
+        int idx);

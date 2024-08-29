@@ -166,7 +166,7 @@ static void process_image(struct llava_context * ctx_llava, struct llava_image_e
 static const char * sample(struct llama_sampling * smpl,
                            struct llama_context * ctx_llama,
                            int * n_past) {
-    const llama_token id = llama_sampling_sample(smpl, ctx_llama);
+    const llama_token id = llama_sampling_sample(smpl, ctx_llama, -1);
     llama_sampling_accept(smpl, id, true);
     static std::string ret;
     if (llama_token_is_eog(llama_get_model(ctx_llama), id)) {

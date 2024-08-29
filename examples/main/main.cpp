@@ -650,7 +650,7 @@ int main(int argc, char ** argv) {
                 LOG("saved session to %s\n", path_session.c_str());
             }
 
-            const llama_token id = llama_sampling_sample(smpl, ctx);
+            const llama_token id = llama_sampling_sample(smpl, ctx, -1);
 
             llama_sampling_accept(smpl, id, /* apply_grammar= */ true);
 

@@ -199,9 +199,25 @@ llama_token llama_sampling_sample(
         int idx) {
     llama_sampling_set_logits(smpl, llama_get_logits_ith(ctx, idx));
 
-    auto * cur_p = llama_sampling_get_candidates(smpl);
+    // first, sample the token without any grammar constraints
+    auto id = llama_sampling_sample(smpl, nullptr);
 
-    llama_sampling_grammar(smpl, cur_p);
+    // create an array with a single token data element for the sampled id
+    llama_token_data single_token_data = {id, 1.0f, 0.0f};
+    llama_token_data_array single_token_data_array = { &single_token_data, 1, false };
 
-    return llama_sampling_sample(smpl, cur_p);
+    llama_sampling_grammar(smpl, &single_token_data_array);
+
+    // check if the token is valid according to the grammar by seeing if its logit has been set to -INFINITY
+    const bool is_valid = single_token_data_array.data[0].logit != -INFINITY;
+    if (is_valid) {
+        return id;
+    }
+
+    // if the token is not valid, sample again, after applying the grammar constraints
+    llama_sampling_set_logits(smpl, llama_get_logits_ith(ctx, idx));
+
+    llama_sampling_grammar(smpl, nullptr);
+
+    return llama_sampling_sample(smpl, nullptr);
 }

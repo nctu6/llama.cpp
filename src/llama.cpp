@@ -20139,11 +20139,19 @@ llama_token_data_array * llama_sampling_get_candidates(struct llama_sampling * s
 void llama_sampling_softmax(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     llama_sampling_softmax_impl(candidates);
 }
 
 void llama_sampling_top_k(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     llama_sampling_top_k_impl(candidates, smpl->params.top_k, smpl->params.min_keep);
 }
@@ -20151,11 +20159,19 @@ void llama_sampling_top_k(struct llama_sampling * smpl, llama_token_data_array *
 void llama_sampling_top_p(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     llama_sampling_top_p_impl(candidates, smpl->params.top_p, smpl->params.min_keep);
 }
 
 void llama_sampling_min_p(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     llama_sampling_min_p_impl(candidates, smpl->params.min_p, smpl->params.min_keep);
 }
@@ -20163,17 +20179,29 @@ void llama_sampling_min_p(struct llama_sampling * smpl, llama_token_data_array *
 void llama_sampling_tail_free(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     llama_sampling_tail_free_impl(candidates, smpl->params.tfs_z, smpl->params.min_keep);
 }
 
 void llama_sampling_typical(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     llama_sampling_typical_impl(candidates, smpl->params.typ_p, smpl->params.min_keep);
 }
 
 void llama_sampling_temp(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     if (smpl->params.dynatemp_range > 0) {
         const float dynatemp_min = std::max(0.0f, smpl->params.temp - smpl->params.dynatemp_range);
@@ -20188,6 +20216,10 @@ void llama_sampling_temp(struct llama_sampling * smpl, llama_token_data_array * 
 void llama_sampling_grammar(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_grammar_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     if (smpl->grammar) {
         llama_sampling_grammar_impl(candidates, *smpl->grammar);
 
@@ -20199,6 +20231,10 @@ void llama_sampling_penalties(
         struct llama_sampling * smpl,
        llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     const size_t penalty_last_n = std::min<size_t>(smpl->params.penalty_last_n, smpl->prev.size());
 
@@ -20223,6 +20259,10 @@ void llama_sampling_penalties(
 
 llama_token llama_sampling_sample_mirostat(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     const auto type = smpl->params.mirostat;
 
@@ -20254,6 +20294,10 @@ llama_token llama_sampling_sample_mirostat(struct llama_sampling * smpl, llama_t
 llama_token llama_sampling_sample_greedy(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     auto res = llama_sampling_sample_greedy_impl(candidates);
 
     smpl->n_sample++;
@@ -20264,6 +20308,10 @@ llama_token llama_sampling_sample_greedy(struct llama_sampling * smpl, llama_tok
 llama_token llama_sampling_sample_dist(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
 
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
+
     auto res = llama_sampling_sample_dist_impl(candidates, smpl->rng);
 
     smpl->n_sample++;
@@ -20273,6 +20321,10 @@ llama_token llama_sampling_sample_dist(struct llama_sampling * smpl, llama_token
 
 llama_token llama_sampling_sample(struct llama_sampling * smpl, llama_token_data_array * candidates) {
     time_meas tm(smpl->t_sample_us);
+
+    if (candidates == nullptr) {
+        candidates = &smpl->cur_p;
+    }
 
     const auto & params = smpl->params;
 

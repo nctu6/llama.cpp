@@ -136,28 +136,17 @@ while n_cur <= n_len {
             continue
         }
 
-        var n_vocab = llama_n_vocab(model)
         var logits = llama_get_logits_ith(context, i_batch[i])
 
-        var candidates: [llama_token_data] = .init(repeating: llama_token_data(), count: Int(n_vocab))
+        llama_sampling_set_logits(smpl, logits)
 
-        for token_id in 0 ..< n_vocab {
-            candidates.append(llama_token_data(id: token_id, logit: logits![Int(token_id)], p: 0.0))
-        }
+        llama_sampling_top_k(smpl, nil)
+        llama_sampling_top_p(smpl, nil)
+        llama_sampling_temp (smpl, nil)
 
-        var candidates_p: llama_token_data_array = .init(
-            data: &candidates,
-            size: candidates.count,
-            sorted: false
-        )
+        let new_token_id = llama_sampling_sample_dist(smpl, nil)
 
-        llama_sampling_top_k(smpl, &candidates_p)
-        llama_sampling_top_p(smpl, &candidates_p)
-        llama_sampling_temp (smpl, &candidates_p)
-
-        let new_token_id = llama_sampling_sample_dist(smpl, &candidates_p)
-
-        // const llama_token new_token_id = llama_sampling_sample_greedy(smpl, &candidates_p);
+        // const llama_token new_token_id = llama_sampling_sample_greedy(smpl, nil);
 
         // is it an end of stream? -> mark the stream as finished
         if llama_token_is_eog(model, new_token_id) || n_cur == n_len {
