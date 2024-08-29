@@ -20344,6 +20344,10 @@ llama_token llama_sampling_prev(const struct llama_sampling * smpl, int32_t ith)
     return llama_sampling_prev_impl(*smpl, ith);
 }
 
+llama_token llama_sampling_last(const struct llama_sampling * smpl) {
+    return llama_sampling_prev_impl(*smpl, 0);
+}
+
 int llama_sampling_n_prev(const struct llama_sampling * smpl) {
     return llama_sampling_n_prev_impl(*smpl);
 }

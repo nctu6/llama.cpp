@@ -33,7 +33,7 @@
 
 static llama_context           ** g_ctx;
 static llama_model             ** g_model;
-static llama_sampling_context  ** g_ctx_sampling;
+static llama_sampling          ** g_smpl;
 static gpt_params               * g_params;
 static std::vector<llama_token> * g_input_tokens;
 static std::ostringstream       * g_output_ss;
@@ -106,7 +106,7 @@ static void sigint_handler(int signo) {
         } else {
             console::cleanup();
             printf("\n");
-            llama_print_timings(*g_ctx, (*g_ctx_sampling)->smpl);
+            llama_print_timings(*g_ctx, *g_smpl);
             write_logfile(*g_ctx, *g_params, *g_model, *g_input_tokens, g_output_ss->str(), *g_output_tokens);
             _exit(130);
         }
@@ -193,13 +193,13 @@ int main(int argc, char ** argv) {
 
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
-    llama_sampling_context * ctx_sampling = nullptr;
+    llama_sampling * smpl = nullptr;
 
     std::vector<llama_chat_msg> chat_msgs;
 
     g_model = &model;
     g_ctx = &ctx;
-    g_ctx_sampling = &ctx_sampling;
+    g_smpl = &smpl;
 
     // load the model and apply lora adapter, if any
     LOG("%s: load the model and apply lora adapter, if any\n", __func__);
@@ -494,8 +494,8 @@ int main(int argc, char ** argv) {
         antiprompt_ids.emplace_back(::llama_tokenize(ctx, antiprompt, false, true));
     }
 
-    ctx_sampling = llama_sampling_init(model, sparams);
-    if (!ctx_sampling) {
+    smpl = llama_sampling_init(model, sparams);
+    if (!smpl) {
         fprintf(stderr, "%s: failed to initialize sampling subsystem\n", __func__);
         exit(1);
     }
@@ -650,11 +650,11 @@ int main(int argc, char ** argv) {
                 LOG("saved session to %s\n", path_session.c_str());
             }
 
-            const llama_token id = llama_sampling_sample(ctx_sampling, ctx);
+            const llama_token id = llama_sampling_sample(smpl, ctx);
 
-            llama_sampling_accept(ctx_sampling->smpl, id, /* apply_grammar= */ true);
+            llama_sampling_accept(smpl, id, /* apply_grammar= */ true);
 
-            // LOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, ctx_sampling->prev.to_vector()).c_str());
+            // LOG("last: %s\n", LOG_TOKENS_TOSTR_PRETTY(ctx, smpl->prev.to_vector()).c_str());
 
             embd.push_back(id);
 
@@ -673,7 +673,7 @@ int main(int argc, char ** argv) {
 
                 // push the prompt in the sampling context in order to apply repetition penalties later
                 // for the prompt, we don't apply grammar rules
-                llama_sampling_accept(ctx_sampling->smpl, embd_inp[n_consumed], /* apply_grammar= */ false);
+                llama_sampling_accept(smpl, embd_inp[n_consumed], /* apply_grammar= */ false);
 
                 ++n_consumed;
                 if ((int) embd.size() >= params.n_batch) {
@@ -716,7 +716,7 @@ int main(int argc, char ** argv) {
             // check for reverse prompt in the last n_prev tokens
             if (!params.antiprompt.empty()) {
                 const int n_prev = 32;
-                const std::string last_output = llama_sampling_prev_str(ctx_sampling, ctx, n_prev);
+                const std::string last_output = llama_sampling_prev_str(smpl, ctx, n_prev);
 
                 is_antiprompt = false;
                 // Check if each of the reverse prompts appears at the end of the output.
@@ -738,7 +738,7 @@ int main(int argc, char ** argv) {
                 }
 
                 // check for reverse prompt using special tokens
-                llama_token last_token = llama_sampling_last(ctx_sampling);
+                llama_token last_token = llama_sampling_last(smpl);
                 for (std::vector<llama_token> ids : antiprompt_ids) {
                     if (ids.size() == 1 && last_token == ids[0]) {
                         if (params.interactive) {
@@ -755,7 +755,7 @@ int main(int argc, char ** argv) {
             }
 
             // deal with end of generation tokens in interactive mode
-            if (llama_token_is_eog(model, llama_sampling_last(ctx_sampling))) {
+            if (llama_token_is_eog(model, llama_sampling_last(smpl))) {
                 LOG("found an EOG token\n");
 
                 if (params.interactive) {
@@ -776,7 +776,7 @@ int main(int argc, char ** argv) {
 
             // if current token is not EOG, we add it to current assistant message
             if (params.conversation) {
-                auto id = llama_sampling_last(ctx_sampling);
+                auto id = llama_sampling_last(smpl);
                 assistant_ss << llama_token_to_piece(ctx, id, false);
             }
 
@@ -872,7 +872,7 @@ int main(int argc, char ** argv) {
 
             if (n_past > 0) {
                 if (is_interacting) {
-                    llama_sampling_reset(ctx_sampling->smpl);
+                    llama_sampling_reset(smpl);
                 }
                 is_interacting = false;
             }
@@ -897,13 +897,13 @@ int main(int argc, char ** argv) {
         llama_state_save_file(ctx, path_session.c_str(), session_tokens.data(), session_tokens.size());
     }
 
-    llama_print_timings(ctx, ctx_sampling->smpl);
+    llama_print_timings(ctx, smpl);
     write_logfile(ctx, params, model, input_tokens, output_ss.str(), output_tokens);
 
     llama_free(ctx);
     llama_free_model(model);
 
-    llama_sampling_free(ctx_sampling);
+    llama_sampling_free(smpl);
     llama_backend_free();
 
 #ifndef LOG_DISABLE_LOGS

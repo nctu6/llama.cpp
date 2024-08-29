@@ -1126,6 +1126,11 @@ extern "C" {
             const struct llama_sampling * smpl,
                                 int32_t   ith);
 
+    /// @details Get the last accepted token
+    /// Same as llama_sampling_prev(smpl, 0)
+    /// returns LLAMA_TOKEN_NULL if there are no accepted tokens
+    LLAMA_API llama_token llama_sampling_last(const struct llama_sampling * smpl);
+
     /// @details Get the number of accepted tokens (max of n_prev)
     LLAMA_API int llama_sampling_n_prev(const struct llama_sampling * smpl);
 

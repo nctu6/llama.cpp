@@ -31,10 +31,8 @@ std::string gpt_sampling_params::print_samplers() const {
 
     return result;
 }
-struct llama_sampling_context * llama_sampling_init(const struct llama_model * model, const struct gpt_sampling_params & params) {
-    struct llama_sampling_context * result = new llama_sampling_context();
-
-    result->params = params;
+struct llama_sampling * llama_sampling_init(const struct llama_model * model, const struct gpt_sampling_params & params) {
+    struct llama_sampling * result = nullptr;
 
     {
         auto lparams = llama_sampling_default_params();
@@ -66,35 +64,25 @@ struct llama_sampling_context * llama_sampling_init(const struct llama_model * m
             lparams.samplers[i] = params.samplers[i];
         }
 
-        result->smpl = llama_sampling_init(model, lparams);
+        result = llama_sampling_init(model, lparams);
 
-        llama_sampling_set_grammar   (result->smpl, params.grammar.c_str(), "root");
-        llama_sampling_set_logit_bias(result->smpl, params.logit_bias.size(), params.logit_bias.data());
+        llama_sampling_set_grammar   (result, params.grammar.c_str(), "root");
+        llama_sampling_set_logit_bias(result, params.logit_bias.size(), params.logit_bias.data());
     }
 
     return result;
 }
 
-void llama_sampling_free(struct llama_sampling_context * ctx) {
-    llama_sampling_free(ctx->smpl);
-
-    delete ctx;
-}
-
-void llama_sampling_cp(llama_sampling_context * src, llama_sampling_context * dst) {
-    if (dst->smpl) {
-        llama_sampling_free(dst->smpl);
+void llama_sampling_cp(llama_sampling * src, llama_sampling * dst) {
+    if (dst) {
+        llama_sampling_free(dst);
     }
 
-    dst->smpl = llama_sampling_cp(src->smpl);
+    dst = llama_sampling_cp(src);
 }
 
-llama_token llama_sampling_last(llama_sampling_context * ctx) {
-    return llama_sampling_prev(ctx->smpl, 0);
-}
-
-std::string llama_sampling_prev_str(llama_sampling_context * ctx_sampling, llama_context * ctx_main, int n) {
-    n = std::min(n, llama_sampling_n_prev(ctx_sampling->smpl));
+std::string llama_sampling_prev_str(llama_sampling * smpl, llama_context * ctx_main, int n) {
+    n = std::min(n, llama_sampling_n_prev(smpl));
 
     if (n <= 0) {
         return "";
@@ -104,7 +92,7 @@ std::string llama_sampling_prev_str(llama_sampling_context * ctx_sampling, llama
     result.reserve(8*n); // 8 is the average length of a token [citation needed], TODO: compute this from the vocab
 
     for (int i = n - 1; i >= 0; i--) {
-        const llama_token id = llama_sampling_prev(ctx_sampling->smpl, i);
+        const llama_token id = llama_sampling_prev(smpl, i);
 
         GGML_ASSERT(id != LLAMA_TOKEN_NULL && "null token in the sampling history - should not happen");
 
@@ -206,14 +194,14 @@ std::vector<llama_sampler_type> llama_sampling_types_from_chars(const std::strin
 }
 
 llama_token llama_sampling_sample(
-        struct llama_sampling_context * ctx_sampling,
-        struct llama_context * ctx_main,
+        struct llama_sampling * smpl,
+        struct llama_context * ctx,
         int idx) {
-    llama_sampling_set_logits(ctx_sampling->smpl, llama_get_logits_ith(ctx_main, idx));
+    llama_sampling_set_logits(smpl, llama_get_logits_ith(ctx, idx));
 
-    auto * cur_p = llama_sampling_get_candidates(ctx_sampling->smpl);
+    auto * cur_p = llama_sampling_get_candidates(smpl);
 
-    llama_sampling_grammar(ctx_sampling->smpl, cur_p);
+    llama_sampling_grammar(smpl, cur_p);
 
-    return llama_sampling_sample(ctx_sampling->smpl, cur_p);
+    return llama_sampling_sample(smpl, cur_p);
 }

@@ -176,7 +176,7 @@ struct server_slot {
     struct gpt_sampling_params sparams;
 
     llama_token sampled;
-    llama_sampling_context * ctx_sampling = nullptr;
+    llama_sampling * smpl = nullptr;
 
     int32_t ga_i = 0;   // group-attention state
     int32_t ga_n = 1;   // group-attention factor
@@ -668,8 +668,8 @@ struct server_context {
 
         // Clear any sampling context
         for (server_slot & slot : slots) {
-            if (slot.ctx_sampling != nullptr) {
-                llama_sampling_free(slot.ctx_sampling);
+            if (slot.smpl != nullptr) {
+                llama_sampling_free(slot.smpl);
             }
         }
 
@@ -1054,12 +1054,12 @@ struct server_context {
         }
 
         {
-            if (slot.ctx_sampling != nullptr) {
-                llama_sampling_free(slot.ctx_sampling);
+            if (slot.smpl != nullptr) {
+                llama_sampling_free(slot.smpl);
             }
 
-            slot.ctx_sampling = llama_sampling_init(model, slot.sparams);
-            if (slot.ctx_sampling == nullptr) {
+            slot.smpl = llama_sampling_init(model, slot.sparams);
+            if (slot.smpl == nullptr) {
                 // for now, the only error that may happen here is invalid grammar
                 send_error(task, "Failed to parse grammar", ERROR_TYPE_INVALID_REQUEST);
                 return false;
@@ -2098,7 +2098,7 @@ struct server_context {
                                 GGML_ASSERT(slot.n_prompt_tokens < slot.n_ctx);
                             }
 
-                            llama_sampling_reset(slot.ctx_sampling->smpl);
+                            llama_sampling_reset(slot.smpl);
 
                             if (!slot.params.cache_prompt) {
                                 slot.n_past_se = 0;
@@ -2111,7 +2111,7 @@ struct server_context {
 
                                 // push the prompt into the sampling context (do not apply grammar)
                                 for (int i = 0; i < slot.n_past; ++i) {
-                                    llama_sampling_accept(slot.ctx_sampling->smpl, slot.cache_tokens[i], false);
+                                    llama_sampling_accept(slot.smpl, slot.cache_tokens[i], false);
                                 }
                             }
                         }
@@ -2164,7 +2164,7 @@ struct server_context {
                         slot.n_past_se = 0;
                         slot.ga_i = 0;
                         // TODO: is the system prompt ever in the sampling context?
-                        llama_sampling_reset(slot.ctx_sampling->smpl);
+                        llama_sampling_reset(slot.smpl);
                     }
 
                     // remove the non-common part from the cache
@@ -2341,9 +2341,9 @@ struct server_context {
                 }
 
                 completion_token_output result;
-                const llama_token id = llama_sampling_sample(slot.ctx_sampling, ctx, slot.i_batch - i);
+                const llama_token id = llama_sampling_sample(slot.smpl, ctx, slot.i_batch - i);
 
-                llama_sampling_accept(slot.ctx_sampling->smpl, id, true);
+                llama_sampling_accept(slot.smpl, id, true);
 
                 slot.n_decoded += 1;
                 if (slot.n_decoded == 1) {
@@ -2354,7 +2354,7 @@ struct server_context {
 
                 result.tok = id;
 
-                const auto * cur_p = llama_sampling_get_candidates(slot.ctx_sampling->smpl);
+                const auto * cur_p = llama_sampling_get_candidates(slot.smpl);
 
                 for (size_t i = 0; i < (size_t) slot.sparams.n_probs; ++i) {
                     result.probs.push_back({
