@@ -46,6 +46,8 @@
 #define LLAMA_STATE_SEQ_MAGIC   LLAMA_FILE_MAGIC_GGSQ
 #define LLAMA_STATE_SEQ_VERSION 2
 
+#define LLAMA_MAX_SAMPLERS 16
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -201,6 +203,16 @@ extern "C" {
         LLAMA_SPLIT_MODE_NONE    = 0, // single GPU
         LLAMA_SPLIT_MODE_LAYER   = 1, // split layers and KV across GPUs
         LLAMA_SPLIT_MODE_ROW     = 2, // split rows across GPUs
+    };
+
+    enum llama_sampler_type {
+        LLAMA_SAMPLER_TYPE_NONE        = 0,
+        LLAMA_SAMPLER_TYPE_TOP_K       = 1,
+        LLAMA_SAMPLER_TYPE_TOP_P       = 2,
+        LLAMA_SAMPLER_TYPE_MIN_P       = 3,
+        LLAMA_SAMPLER_TYPE_TFS_Z       = 4,
+        LLAMA_SAMPLER_TYPE_TYPICAL_P   = 5,
+        LLAMA_SAMPLER_TYPE_TEMPERATURE = 6,
     };
 
     typedef struct llama_token_data {
@@ -387,7 +399,10 @@ extern "C" {
         int32_t  mirostat;          // 0 = disabled, 1 = mirostat, 2 = mirostat 2.0
         float    mirostat_tau;      // target entropy
         float    mirostat_eta;      // learning rate
-        float    cfg_scale;         // classifier-free guidance scale
+
+        // samples
+        int32_t n_samplers;
+        enum llama_sampler_type samplers[LLAMA_MAX_SAMPLERS];
 
         // Keep the booleans together and at the end of the struct to avoid misalignment during copy-by-value.
         bool penalize_nl; // consider newlines as a repeatable token

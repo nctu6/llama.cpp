@@ -116,38 +116,38 @@ std::string llama_sampling_order_print(const gpt_sampling_params & params) {
 
 std::string llama_sampling_type_to_str(llama_sampler_type sampler_type) {
     switch (sampler_type) {
-        case llama_sampler_type::TOP_K:       return "top_k";
-        case llama_sampler_type::TFS_Z:       return "tfs_z";
-        case llama_sampler_type::TYPICAL_P:   return "typical_p";
-        case llama_sampler_type::TOP_P:       return "top_p";
-        case llama_sampler_type::MIN_P:       return "min_p";
-        case llama_sampler_type::TEMPERATURE: return "temperature";
+        case LLAMA_SAMPLER_TYPE_TOP_K:       return "top_k";
+        case LLAMA_SAMPLER_TYPE_TFS_Z:       return "tfs_z";
+        case LLAMA_SAMPLER_TYPE_TYPICAL_P:   return "typical_p";
+        case LLAMA_SAMPLER_TYPE_TOP_P:       return "top_p";
+        case LLAMA_SAMPLER_TYPE_MIN_P:       return "min_p";
+        case LLAMA_SAMPLER_TYPE_TEMPERATURE: return "temperature";
         default : return "";
     }
 }
 
 std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vector<std::string> & names, bool allow_alt_names) {
     std::unordered_map<std::string, llama_sampler_type> sampler_canonical_name_map {
-        {"top_k",       llama_sampler_type::TOP_K},
-        {"top_p",       llama_sampler_type::TOP_P},
-        {"typical_p",   llama_sampler_type::TYPICAL_P},
-        {"min_p",       llama_sampler_type::MIN_P},
-        {"tfs_z",       llama_sampler_type::TFS_Z},
-        {"temperature", llama_sampler_type::TEMPERATURE}
+        {"top_k",       LLAMA_SAMPLER_TYPE_TOP_K},
+        {"top_p",       LLAMA_SAMPLER_TYPE_TOP_P},
+        {"typical_p",   LLAMA_SAMPLER_TYPE_TYPICAL_P},
+        {"min_p",       LLAMA_SAMPLER_TYPE_MIN_P},
+        {"tfs_z",       LLAMA_SAMPLER_TYPE_TFS_Z},
+        {"temperature", LLAMA_SAMPLER_TYPE_TEMPERATURE}
     };
 
     // since samplers names are written multiple ways
     // make it ready for both system names and input names
     std::unordered_map<std::string, llama_sampler_type> sampler_alt_name_map {
-        {"top-k",       llama_sampler_type::TOP_K},
-        {"top-p",       llama_sampler_type::TOP_P},
-        {"nucleus",     llama_sampler_type::TOP_P},
-        {"typical-p",   llama_sampler_type::TYPICAL_P},
-        {"typical",     llama_sampler_type::TYPICAL_P},
-        {"min-p",       llama_sampler_type::MIN_P},
-        {"tfs-z",       llama_sampler_type::TFS_Z},
-        {"tfs",         llama_sampler_type::TFS_Z},
-        {"temp",        llama_sampler_type::TEMPERATURE}
+        {"top-k",       LLAMA_SAMPLER_TYPE_TOP_K},
+        {"top-p",       LLAMA_SAMPLER_TYPE_TOP_P},
+        {"nucleus",     LLAMA_SAMPLER_TYPE_TOP_P},
+        {"typical-p",   LLAMA_SAMPLER_TYPE_TYPICAL_P},
+        {"typical",     LLAMA_SAMPLER_TYPE_TYPICAL_P},
+        {"min-p",       LLAMA_SAMPLER_TYPE_MIN_P},
+        {"tfs-z",       LLAMA_SAMPLER_TYPE_TFS_Z},
+        {"tfs",         LLAMA_SAMPLER_TYPE_TFS_Z},
+        {"temp",        LLAMA_SAMPLER_TYPE_TEMPERATURE}
     };
 
     std::vector<llama_sampler_type> sampler_types;
@@ -172,12 +172,12 @@ std::vector<llama_sampler_type> llama_sampling_types_from_names(const std::vecto
 
 std::vector<llama_sampler_type> llama_sampling_types_from_chars(const std::string & names_string) {
     std::unordered_map<char, llama_sampler_type> sampler_name_map {
-        {'k', llama_sampler_type::TOP_K},
-        {'p', llama_sampler_type::TOP_P},
-        {'y', llama_sampler_type::TYPICAL_P},
-        {'m', llama_sampler_type::MIN_P},
-        {'f', llama_sampler_type::TFS_Z},
-        {'t', llama_sampler_type::TEMPERATURE}
+        {'k', LLAMA_SAMPLER_TYPE_TOP_K},
+        {'p', LLAMA_SAMPLER_TYPE_TOP_P},
+        {'y', LLAMA_SAMPLER_TYPE_TYPICAL_P},
+        {'m', LLAMA_SAMPLER_TYPE_MIN_P},
+        {'f', LLAMA_SAMPLER_TYPE_TFS_Z},
+        {'t', LLAMA_SAMPLER_TYPE_TEMPERATURE}
     };
 
     std::vector<llama_sampler_type> sampler_types;
@@ -203,12 +203,12 @@ static void sampler_queue(
 
     for (auto sampler_type : samplers_sequence) {
         switch (sampler_type) {
-            case llama_sampler_type::TOP_K:       llama_sampling_top_k    (smpl, cur_p); break;
-            case llama_sampler_type::TFS_Z:       llama_sampling_tail_free(smpl, cur_p); break;
-            case llama_sampler_type::TYPICAL_P:   llama_sampling_typical  (smpl, cur_p); break;
-            case llama_sampler_type::TOP_P:       llama_sampling_top_p    (smpl, cur_p); break;
-            case llama_sampler_type::MIN_P:       llama_sampling_min_p    (smpl, cur_p); break;
-            case llama_sampler_type::TEMPERATURE: llama_sampling_temp     (smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_TOP_K:       llama_sampling_top_k    (smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_TFS_Z:       llama_sampling_tail_free(smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_TYPICAL_P:   llama_sampling_typical  (smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_TOP_P:       llama_sampling_top_p    (smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_MIN_P:       llama_sampling_min_p    (smpl, cur_p); break;
+            case LLAMA_SAMPLER_TYPE_TEMPERATURE: llama_sampling_temp     (smpl, cur_p); break;
             default : break;
         }
     }
