@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_DEPRECATE // Disables ridiculous "unsafe" warnings on Windows
 #define _USE_MATH_DEFINES // For M_PI on MSVC
-
+#define GGML_COMMON_IMPL_C
+#include "ggml-common.h"
 #include "ggml-impl.h"
 #include "ggml-quants.h"
 #include "ggml.h"
@@ -163,6 +164,10 @@ typedef pthread_t ggml_thread_t;
 
 #ifdef GGML_USE_CPU_HBM
 #include <hbwmalloc.h>
+#endif
+
+#if defined(GGML_USE_TMAC)
+#include "ggml-tmac.h"
 #endif
 
 #if defined(__APPLE__)
@@ -405,6 +410,10 @@ inline static void * ggml_calloc(size_t num, size_t size) {
 
 #if defined(GGML_USE_ACCELERATE)
 #include <Accelerate/Accelerate.h>
+#endif
+
+#if defined(GGML_USE_TMAC)
+#include "ggml-tmac.h"
 #endif
 
 // floating point type used to accumulate sums
@@ -661,6 +670,42 @@ static void ggml_vec_dot_f16(int n, float * restrict s, size_t bs, ggml_fp16_t *
 static void ggml_vec_dot_bf16(int n, float * restrict s, size_t bs, ggml_bf16_t * restrict x, size_t bx, ggml_bf16_t * restrict y, size_t by, int nrc);
 
 static const ggml_type_traits_t type_traits[GGML_TYPE_COUNT] = {
+    [GGML_TYPE_I2] = {
+        .type_name                = "i2",
+        .blck_size                = 4,
+        .type_size                = sizeof(int8_t),
+        .is_quantized             = false,
+        .vec_dot                  = (ggml_vec_dot_t) ggml_vec_dot_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I1] = {
+        .type_name                = "i1",
+        .blck_size                = 8,
+        .type_size                = sizeof(int8_t),
+        .is_quantized             = false,
+        .vec_dot                  = (ggml_vec_dot_t) ggml_vec_dot_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I3] = {
+        .type_name                = "i3",
+        .blck_size                = 2,
+        .type_size                = sizeof(int8_t),
+        .is_quantized             = false,
+        .vec_dot                  = (ggml_vec_dot_t) ggml_vec_dot_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I4] = {
+        .type_name                = "i4",
+        .blck_size                = 2,
+        .type_size                = sizeof(int8_t),
+        .is_quantized             = false,
+        .vec_dot                  = (ggml_vec_dot_t) ggml_vec_dot_f32,
+        .vec_dot_type             = GGML_TYPE_F32,
+        .nrows                    = 1,
+    },	
     [GGML_TYPE_I8] = {
         .type_name                = "i8",
         .blck_size                = 1,
@@ -2884,6 +2929,114 @@ inline static void ggml_vec_argmax_f32(const int n, int * s, const float * x) {
     *s = idx;
 }
 
+inline static void ggml_vec_dot_i2_f32(int64_t n, float * restrict s, const float * x, uint8_t* w) {
+    ggml_float sumf = 0.0;
+    #pragma unroll
+    for (int64_t i = 0; i < n; ++i) {
+        int wi = i / 4;
+        int shift = i % 4;
+        uint8_t weight = w[wi];
+        uint8_t pos = 0;
+        switch (shift)
+        {
+        case 0:
+            pos = (weight) & ((uint8_t)(192));
+            switch (pos)
+            {
+            case 64:
+                sumf += (ggml_float)(x[i]);
+                break;
+            case 192:
+                sumf -= (ggml_float)(x[i]);
+                break;
+            }
+            break;
+        case 1:
+            pos = (weight) & ((uint8_t)(48));
+            switch (pos)
+            {
+            case 16:
+                sumf += (ggml_float)(x[i]);
+                break;
+            case 48:
+                sumf -= (ggml_float)(x[i]);
+                break;
+            }
+            break;
+        case 2:
+            pos = (weight) & ((uint8_t)(12));
+            switch (pos)
+            {
+            case 4:
+                sumf += (ggml_float)(x[i]);
+                break;
+            case 12:
+                sumf -= (ggml_float)(x[i]);
+                break;
+            }
+            break;
+        case 3:
+            pos = (weight) & ((uint8_t)(3));
+            switch (pos)
+            {
+            case 1:
+                sumf += (ggml_float)(x[i]);
+                break;
+            case 3:
+                sumf -= (ggml_float)(x[i]);
+                break;
+            }
+            break;
+        }
+    }
+    *s = sumf;
+}
+
+inline static void ggml_vec_dot_i2_q80(int64_t n, float * restrict s, const void * vx, uint8_t* vy) {
+    const int qk = QK8_0;
+    const int nb = n / qk;
+
+    const block_q8_0 * restrict x = vx;
+    const uint8_t    * restrict y = vy;
+
+    ggml_float sumf = 0.0;
+
+    for (int i = 0; i < nb; i++) {
+        int sumi0 = 0;
+        int sumi1 = 0;
+        int sumi2 = 0;
+        int sumi3 = 0;
+
+        for (int j = 0; j < qk / 4; j++) {
+            int8_t* weight = (const int8_t *)(i2_q8 + y[(i*qk/4 + j)]);
+            sumi0 += x[i].qs[4*j+0] * weight[0];
+            sumi1 += x[i].qs[4*j+1] * weight[1];
+            sumi2 += x[i].qs[4*j+2] * weight[2];
+            sumi3 += x[i].qs[4*j+3] * weight[3];
+        }
+
+        sumf += (sumi0 + sumi1 + sumi2 + sumi3)*(GGML_FP16_TO_FP32(x[i].d));
+    }
+    *s = sumf;
+}
+
+inline static void ggml_vec_absmaxclamp_f32(const int n, float * s, const float * x, float min) {
+    float max = min;
+    for (int i = 0; i < n; ++i) {
+        max = MAX(max, fabs(x[i]));
+    }
+    *s = max;
+}
+inline static void ggml_vec_scaleroundclamp_f32(const int n, float * s, const float * x, float scale, float min, float max) {
+    for (int i = 0; i < n; ++i) {
+        s[i] = round(x[i] * scale);
+        if (s[i] > max) s[i] = max;
+        if (s[i] < min) s[i] = min;
+        s[i] /= scale;
+    }
+}
+
+
 //
 // data types
 //
@@ -3355,6 +3508,14 @@ GGML_CALL size_t ggml_nbytes(const struct ggml_tensor * tensor) {
             nbytes += (tensor->ne[i] - 1)*tensor->nb[i];
         }
     }
+#if defined(GGML_USE_TMAC)
+		if(tensor->type == GGML_TYPE_I2 ||
+		   tensor->type == GGML_TYPE_I1 ||
+		   tensor->type == GGML_TYPE_I3 ||
+		   tensor->type == GGML_TYPE_I4){
+			nbytes = ggml_tmac_get_nbytes(tensor);
+		}
+#endif
 
     return nbytes;
 }
@@ -12801,6 +12962,141 @@ static void ggml_compute_forward_mul_mat(
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
 
+#if defined(GGML_USE_TMAC)
+		if (ggml_tmac_can_mul_mat(src0, src1, dst)) {
+			if (params->type == GGML_TASK_TYPE_FINALIZE) {
+				return;
+			}
+	
+			const int bits = ggml_tmac_get_type_bits(type);
+			// src0: weight,	 ne00 = k, ne01 = n
+			// src1: activation, ne10 = k, ne11 = m
+			char * wdata = params->wdata;
+	
+			struct tmac_tensor_extra * wt = src0->extra;
+			char * cur_wdata = wdata;
+			tmac_float_type * tmac_f_ptr = wdata;
+			if (sizeof(tmac_float_type) == 2) {
+				cur_wdata = wdata + MAX(ne10, ne01) * ne11 * sizeof(tmac_float_type);
+			};
+			int8_t * qlut = cur_wdata;
+			tmac_float_type * lut_scales = (tmac_float_type *) (qlut + ne10 * ne11 * 4);
+			tmac_float_type * lut_biases = (tmac_float_type *) (lut_scales + wt->lut_scales_size * ne11);
+	
+			// g = 4
+			if (params->type == GGML_TASK_TYPE_INIT) {
+				if (ith != 0) {
+					return;
+				}
+				// Transform tensor if not already transformed
+				// Although we have done this in file `llama.cpp`,
+				// we still need to do it here for non-model inference, e.g., test-backend-ops.cpp.
+				// It's better to do this in ggml-backend.c,
+				// but llama.cpp directly manipulates tensor.data for cbe in a lot of space.
+				ggml_tmac_transform_tensor(src0);
+				GGML_ASSERT(src1->type == GGML_TYPE_F32);
+				tmac_float_type * act_input;
+				if (sizeof(tmac_float_type) == 2) {
+					ggml_fp32_to_fp16_row(src1->data, tmac_f_ptr, ne10 * ne11);
+					act_input = tmac_f_ptr;
+				} else {
+					act_input = src1->data;
+				}
+				for (int ine11 = 0; ine11 < ne11; ine11++) {
+					ggml_tmac_mul_mat_task_init(act_input + ne10 * ine11,
+												qlut + ne10 * ine11 * 4,
+												lut_scales + wt->lut_scales_size * ine11,
+												lut_biases + wt->lut_scales_size * ine11,
+												ne01, ne00, 1, bits);
+				}
+	
+				return;
+			}
+	
+			tmac_float_type * act_output;
+			if (sizeof(tmac_float_type) == 2) {
+				act_output = tmac_f_ptr;
+			} else {
+				act_output = dst->data;
+			}
+#if defined(TMAC_USE_TVM_THREADPOOL)
+			if (ith != 0) {
+				return;
+			}
+			// TODO: schedule ne11(m) in T-MAC
+			for (int ine11 = 0; ine11 < ne11; ine11++) {
+				const int qlut_offset		= ne10 * ine11 * 4;
+				const int lut_scales_offset = wt->lut_scales_size * ine11;
+				const int dst_offset		= ne0 * ine11;
+	
+				ggml_tmac_mul_mat_task_compute(wt->qweights,
+											   wt->scales,
+											   qlut + qlut_offset,
+											   lut_scales + lut_scales_offset,
+											   lut_biases + lut_scales_offset,
+											   act_output + dst_offset,
+											   ne01, ne00, 1, bits);
+			}
+			if (sizeof(tmac_float_type) == 2) {
+				ggml_fp16_to_fp32_row(tmac_f_ptr, dst->data, ne00 * ne01);
+			}
+#else
+			const int n_tile_num = wt->n_tile_num;
+			GGML_ASSERT(ne0 % n_tile_num == 0);
+			const int w_size	  = ne00 * ne01 * bits / 8;
+			const int w_tile_size = w_size / n_tile_num;
+			const int a_tile_size = 8;	// TODO: tune in T-MAC
+			const int a_tile_num  = (ne11 - 1) / a_tile_size + 1;
+	
+			// const int nthw = (n_tile_num > a_tile_num) ? nth : 1;
+			// const int ntha = (n_tile_num > a_tile_num) ? 1 : nth;
+			const int nthw = nth;
+			const int ntha = 1;
+	
+			const int64_t ithw = ith % nthw;
+			const int64_t itha = ith / nthw;
+	
+			const int th_w_tile_num = (n_tile_num + nthw - 1) / nthw;
+			const int th_w_tile_beg = ithw * th_w_tile_num;
+			const int th_w_tile_end = MIN(th_w_tile_beg + th_w_tile_num, n_tile_num);
+	
+			const int th_a_tile_num = (a_tile_num + ntha - 1) / ntha;
+			const int th_a_tile_beg = itha * th_a_tile_num;
+			const int th_a_tile_end = MIN(th_a_tile_beg + th_a_tile_num, a_tile_num);
+	
+			// To prevent spin-lock waiting for TVM threads,
+			// we schedule threads in llama.cpp and only compile kernels for one tile in TVM
+			// TVM currently does not support strided input placeholder
+			// Workaround: use T-MAC GeMV and loop over m axis in llama.cpp
+			for (int i_a_tile = th_a_tile_beg; i_a_tile < th_a_tile_end; i_a_tile++) {
+				const int a_offset = i_a_tile * a_tile_size;
+				for (int i_w_tile = th_w_tile_beg; i_w_tile < th_w_tile_end; i_w_tile++) {
+					const int w_offset			= i_w_tile * w_tile_size;
+					const int scales_offset 	= wt->scales_size * i_w_tile / n_tile_num;
+					for (int ine11 = a_offset; ine11 < MIN(a_offset + a_tile_size, ne11); ine11++) {
+						const int qlut_offset		= ne10 * ine11 * 4;
+						const int lut_scales_offset = wt->lut_scales_size * ine11;
+						const int dst_offset		= ne0 * ine11 + ne0 / n_tile_num * i_w_tile;
+	
+						ggml_tmac_mul_mat_task_compute(wt->qweights + w_offset,
+													   wt->scales + scales_offset,
+													   qlut + qlut_offset,
+													   lut_scales + lut_scales_offset,
+													   lut_biases + lut_scales_offset,
+													   act_output + dst_offset,
+													   ne01 / n_tile_num, ne00, 1, bits);
+						if (sizeof(tmac_float_type) == 2) {
+							ggml_fp16_to_fp32_row(tmac_f_ptr + dst_offset, (float *) dst->data + dst_offset, ne01 / n_tile_num);
+						}
+					}
+				}
+			}
+#endif
+	
+			return;
+		}
+#endif
+
 #if GGML_USE_LLAMAFILE
     // broadcast factors
     const int64_t r2 = ne12 / ne02;
@@ -12865,29 +13161,29 @@ UseGgmlGemm1:;
 
     ggml_barrier(params->threadpool);
 
-#if GGML_USE_LLAMAFILE
-    if (src1->type != vec_dot_type) {
-        const void* wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
-        const size_t row_size = ggml_row_size(vec_dot_type, ne10);
+//#if GGML_USE_LLAMAFILE
+//    if (src1->type != vec_dot_type) {
+//        const void* wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+//        const size_t row_size = ggml_row_size(vec_dot_type, ne10);
 
-        for (int64_t i13 = 0; i13 < ne13; i13++)
-            for (int64_t i12 = 0; i12 < ne12; i12++)
-                if (!llamafile_sgemm(ne01, ne11, ne00/ggml_blck_size(src0->type),
-                                     (const char *)src0->data + i12/r2*nb02 + i13/r3*nb03,
-                                     nb01/ggml_type_size(src0->type),
-                                     (const char *)wdata + (i12*ne11 + i13*ne12*ne11)*row_size,
-                                     row_size/ggml_type_size(vec_dot_type),
-                                     (char *)dst->data + i12*nb2 + i13*nb3,
-                                     nb1/ggml_type_size(dst->type),
-                                     ith, nth,
-                                     src0->type,
-                                     vec_dot_type,
-                                     dst->type))
-                    goto UseGgmlGemm2;
-        return;
-    }
-UseGgmlGemm2:;
-#endif
+//        for (int64_t i13 = 0; i13 < ne13; i13++)
+//            for (int64_t i12 = 0; i12 < ne12; i12++)
+//                if (!llamafile_sgemm(ne01, ne11, ne00/ggml_blck_size(src0->type),
+//                                     (const char *)src0->data + i12/r2*nb02 + i13/r3*nb03,
+//                                     nb01/ggml_type_size(src0->type),
+//                                     (const char *)wdata + (i12*ne11 + i13*ne12*ne11)*row_size,
+//                                     row_size/ggml_type_size(vec_dot_type),
+//                                     (char *)dst->data + i12*nb2 + i13*nb3,
+//                                     nb1/ggml_type_size(dst->type),
+//                                     ith, nth,
+//                                     src0->type,
+//                                     vec_dot_type,
+//                                     dst->type))
+//                    goto UseGgmlGemm2;
+//        return;
+//    }
+//UseGgmlGemm2:;
+//#endif
 
     // This is the size of the first dimension of the result, so we can iterate that way. (see the ASSERT above, these are the same numbers)
     const int64_t nr0 = ne0;
@@ -19764,6 +20060,12 @@ struct ggml_cplan ggml_graph_plan(
             case GGML_OP_MUL_MAT:
                 {
                     const enum ggml_type vec_dot_type = type_traits[node->src[0]->type].vec_dot_type;
+
+#if defined(GGML_USE_TMAC)
+					if (ggml_tmac_can_mul_mat(node->src[0], node->src[1], node)) {
+						cur = ggml_tmac_mul_mat_get_wsize(node->src[0], node->src[1], node);
+					} else
+#endif
 
                     if (node->src[1]->type != vec_dot_type) {
                         cur = ggml_row_size(vec_dot_type, ggml_nelements(node->src[1]));

@@ -4455,6 +4455,10 @@ struct llama_model_loader {
                 case GGML_TYPE_Q4_0_4_4: ftype = LLAMA_FTYPE_MOSTLY_Q4_0_4_4; break;
                 case GGML_TYPE_Q4_0_4_8: ftype = LLAMA_FTYPE_MOSTLY_Q4_0_4_8; break;
                 case GGML_TYPE_Q4_0_8_8: ftype = LLAMA_FTYPE_MOSTLY_Q4_0_8_8; break;
+                case GGML_TYPE_I2   :   ftype = LLAMA_FTYPE_MOSTLY_IN   ;   break;
+                case GGML_TYPE_I1   :   ftype = LLAMA_FTYPE_MOSTLY_IN   ;   break;
+                case GGML_TYPE_I3   :   ftype = LLAMA_FTYPE_MOSTLY_IN   ;   break;
+                case GGML_TYPE_I4   :   ftype = LLAMA_FTYPE_MOSTLY_IN   ;   break;
                 default:
                     {
                         LLAMA_LOG_WARN("%s: unknown type %s\n", __func__, ggml_type_name(type_max));
@@ -4842,6 +4846,9 @@ struct llama_model_loader {
         for (auto & w : weights) {
             size_data += ggml_nbytes(w.tensor);
         }
+#if defined(GGML_USE_TMAC)
+		ggml_tmac_transform_tensor(cur);
+#endif        
     }
 
     void get_mapping_range(size_t * first, size_t * last, void ** addr, int idx, ggml_context * ctx) const {
@@ -5153,6 +5160,7 @@ static std::string llama_model_ftype_name(llama_ftype ftype) {
         case LLAMA_FTYPE_MOSTLY_Q4_0_4_4: return "Q4_0_4_4";
         case LLAMA_FTYPE_MOSTLY_Q4_0_4_8: return "Q4_0_4_8";
         case LLAMA_FTYPE_MOSTLY_Q4_0_8_8: return "Q4_0_8_8";
+        case LLAMA_FTYPE_MOSTLY_IN  : return "IN";
 
         default: return "unknown, may not work";
     }
@@ -15551,33 +15559,33 @@ static void llama_set_inputs(llama_context & lctx, const llama_ubatch & batch) {
         ggml_backend_tensor_set(lctx.inp_pos, batch.pos, 0, n_tokens*ggml_element_size(lctx.inp_pos));
     }
 
-    if (hparams.causal_attn || cparams.pooling_type == LLAMA_POOLING_TYPE_NONE) {
-        GGML_ASSERT(lctx.inp_out_ids && "every model that can must skip unused outputs");
-        const int64_t n_tokens = batch.n_tokens;
+//    if (hparams.causal_attn || cparams.pooling_type == LLAMA_POOLING_TYPE_NONE) {
+//        GGML_ASSERT(lctx.inp_out_ids && "every model that can must skip unused outputs");
+//        const int64_t n_tokens = batch.n_tokens;
 
-        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_out_ids->buffer));
-        int32_t * data = (int32_t *) lctx.inp_out_ids->data;
+//        GGML_ASSERT(ggml_backend_buffer_is_host(lctx.inp_out_ids->buffer));
+//        int32_t * data = (int32_t *) lctx.inp_out_ids->data;
 
-        if (lctx.n_outputs == n_tokens) {
-            for (int i = 0; i < n_tokens; ++i) {
-                data[i] = i;
-            }
-        } else if (batch.output) {
-            int32_t n_outputs = 0;
-            for (int i = 0; i < n_tokens; ++i) {
-                if (batch.output[i]) {
-                    data[n_outputs++] = i;
-                }
-            }
-            // the graph needs to have been passed the correct number of outputs
-            GGML_ASSERT(lctx.n_outputs == n_outputs);
-        } else if (lctx.n_outputs == 1) {
-            // only keep last output
-            data[0] = n_tokens - 1;
-        } else {
-            GGML_ASSERT(lctx.n_outputs == 0);
-        }
-    }
+//        if (lctx.n_outputs == n_tokens) {
+//            for (int i = 0; i < n_tokens; ++i) {
+//                data[i] = i;
+//            }
+//        } else if (batch.output) {
+//            int32_t n_outputs = 0;
+//            for (int i = 0; i < n_tokens; ++i) {
+//                if (batch.output[i]) {
+//                    data[n_outputs++] = i;
+//                }
+//            }
+//            // the graph needs to have been passed the correct number of outputs
+//            GGML_ASSERT(lctx.n_outputs == n_outputs);
+//        } else if (lctx.n_outputs == 1) {
+//            // only keep last output
+//            data[0] = n_tokens - 1;
+//        } else {
+//            GGML_ASSERT(lctx.n_outputs == 0);
+//        }
+//    }
 
     GGML_ASSERT(
         // (!a || b) is a logical implication (a -> b)
@@ -16037,6 +16045,13 @@ static void llama_graph_compute(
     if (ggml_backend_is_metal(lctx.backend_metal)) {
         ggml_backend_metal_set_n_cb(lctx.backend_metal, n_threads);
     }
+#endif
+
+#ifdef GGML_USE_TMAC
+    #ifdef TMAC_USE_TVM_THREADPOOL
+			ggml_tmac_set_n_threads(n_threads);
+			n_threads = 1;
+    #endif
 #endif
 
     if (lctx.backend_cpu != nullptr) {
@@ -16976,6 +16991,10 @@ static ggml_type llama_tensor_get_type(quantize_state_internal & qs, ggml_type n
             else if (ftype == LLAMA_FTYPE_MOSTLY_TQ1_0 || ftype == LLAMA_FTYPE_MOSTLY_TQ2_0) {
                 new_type = GGML_TYPE_Q4_K;
             }
+			else if (ftype == LLAMA_FTYPE_MOSTLY_Q4_0) {
+				new_type = GGML_TYPE_IQ4_NL;
+			}
+			else if (ftype == LLAMA_FTYPE_MOSTLY_Q2_K) new_type = GGML_TYPE_IQ4_NL;
         }
     } else if (ftype == LLAMA_FTYPE_MOSTLY_IQ2_XXS || ftype == LLAMA_FTYPE_MOSTLY_IQ2_XS || ftype == LLAMA_FTYPE_MOSTLY_IQ1_S ||
                ftype == LLAMA_FTYPE_MOSTLY_IQ2_S || ftype == LLAMA_FTYPE_MOSTLY_IQ2_M    || ftype == LLAMA_FTYPE_MOSTLY_IQ1_M) {
@@ -17113,8 +17132,8 @@ static ggml_type llama_tensor_get_type(quantize_state_internal & qs, ggml_type n
                     new_type = GGML_TYPE_Q5_K;
                 }
             } else {
-                if      (ftype == LLAMA_FTYPE_MOSTLY_Q2_K   ) new_type = GGML_TYPE_Q3_K;
-                else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XXS) new_type = GGML_TYPE_IQ3_S;
+//                if      (ftype == LLAMA_FTYPE_MOSTLY_Q2_K   ) new_type = GGML_TYPE_Q3_K;
+                if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_XXS) new_type = GGML_TYPE_IQ3_S;
                 else if (ftype == LLAMA_FTYPE_MOSTLY_Q3_K_M ) new_type = GGML_TYPE_Q4_K;
                 else if (ftype == LLAMA_FTYPE_MOSTLY_Q3_K_L ) new_type = GGML_TYPE_Q5_K;
                 else if (ftype == LLAMA_FTYPE_MOSTLY_IQ3_M  ) new_type = GGML_TYPE_Q4_K;
@@ -17269,6 +17288,7 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
         case LLAMA_FTYPE_MOSTLY_F16:  default_type = GGML_TYPE_F16;  break;
         case LLAMA_FTYPE_MOSTLY_BF16: default_type = GGML_TYPE_BF16; break;
         case LLAMA_FTYPE_ALL_F32:     default_type = GGML_TYPE_F32;  break;
+        case LLAMA_FTYPE_MOSTLY_IN  : default_type = GGML_TYPE_I2; break;
 
         // K-quants
         case LLAMA_FTYPE_MOSTLY_Q2_K_S:
@@ -17556,6 +17576,13 @@ static void llama_model_quantize_internal(const std::string & fname_inp, const s
             }
             if (params->output_tensor_type < GGML_TYPE_COUNT && strcmp(tensor->name, "output.weight") == 0) {
                 new_type = params->output_tensor_type;
+            }
+            if (tensor->type == GGML_TYPE_I2 ||
+                tensor->type == GGML_TYPE_I1 ||
+                tensor->type == GGML_TYPE_I3 ||
+                tensor->type == GGML_TYPE_I4) {
+                // no need quantize for i2
+                new_type = tensor->type;
             }
 
             // If we've decided to quantize to the same type the tensor is already

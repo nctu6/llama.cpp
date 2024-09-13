@@ -824,6 +824,37 @@ if (GGML_KOMPUTE)
     endif()
 endif()
 
+if (LLAMA_TMAC)
+    find_package(TMAC)
+
+    if (TMAC_FOUND)
+        message(STATUS "TMAC found")
+
+        add_compile_definitions(GGML_USE_TMAC)
+
+        set(GGML_HEADERS_TMAC ggml-tmac.h)
+        set(GGML_SOURCES_TMAC ggml-tmac.cpp)
+
+        link_directories(${TMAC_LIB_DIR})
+        # TODO: link t_mac_object when LLAMA_TMAC_SYSLIB
+
+        if (LLAMA_TMAC_TVM_THREADPOOL)
+            add_compile_definitions(TMAC_USE_TVM_THREADPOOL)
+            set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} t_mac)
+        else()
+            if ((NOT ${CMAKE_C_COMPILER_ID} MATCHES "Clang") OR
+                (NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"))
+                message(FATAL_ERROR "Clang is required for T-MAC compilation")
+            endif()
+
+            set(LLAMA_EXTRA_LIBS ${LLAMA_EXTRA_LIBS} t_mac_no_tvm)
+            set(GGML_SOURCES_TMAC ${GGML_SOURCES_TMAC} ${TMAC_KERNELS_SOURCE})
+        endif()
+    else()
+        message(WARNING "TMAC not found")
+    endif()
+endif()
+
 if (GGML_CPU_HBM)
     find_library(memkind memkind REQUIRED)
 
@@ -1126,6 +1157,18 @@ if (CMAKE_OSX_ARCHITECTURES      STREQUAL "arm64" OR
         if (GGML_SVE)
             list(APPEND ARCH_FLAGS -march=armv8.6-a+sve)
         endif()
+        if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64" AND LLAMA_TMAC AND TMAC_FOUND)
+            # Jetson AGX Orin
+            # We need fullfp16 for T-MAC
+            # TODO: check_cxx_source_compiles
+            list(APPEND ARCH_FLAGS -march=armv8.2a+fp16)
+        endif()
+        if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "ARM64" AND LLAMA_TMAC AND TMAC_FOUND)
+            # ARM Windows with LLVM clang GNU interface
+            # We need fullfp16 for T-MAC
+            # TODO: check_cxx_source_compiles
+            list(APPEND ARCH_FLAGS -march=armv8.2a+fp16)
+        endif()        
     endif()
 elseif (CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR CMAKE_GENERATOR_PLATFORM_LWR MATCHES "^(x86_64|i686|amd64|x64|win32)$" OR
         (NOT CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_GENERATOR_PLATFORM_LWR AND
@@ -1137,7 +1180,10 @@ elseif (CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64" OR CMAKE_GENERATOR_PLATFORM_LW
             # TODO: improve, should not reference files from the parent folder
             include(../cmake/FindSIMD.cmake)
         endif ()
-        if (GGML_AVX512)
+        # Can't use LLAMA_AVX512 with Clang for MSVC
+        # with error: conflicting types for '_m_prefetchw
+        if (LLAMA_AVX512 AND (NOT ${CMAKE_C_COMPILER_ID} MATCHES "Clang") AND (NOT ${CMAKE_CXX_COMPILER_ID} MATCHES "
+Clang"))
             list(APPEND ARCH_FLAGS /arch:AVX512)
             # MSVC has no compile-time flags enabling specific
             # AVX512 extensions, neither it defines the
@@ -1316,6 +1362,8 @@ add_library(ggml
             ${GGML_SOURCES_LLAMAFILE} ${GGML_HEADERS_LLAMAFILE}
             ${GGML_SOURCES_CANN}      ${GGML_HEADERS_CANN}
             ggml-aarch64.c            ggml-aarch64.h
+            ${GGML_SOURCES_TMAC}      ${GGML_HEADERS_TMAC}
+            ${GGML_SOURCES_TMAC}    ${GGML_HEADERS_TMAC}
             )
 
 if (EMSCRIPTEN)

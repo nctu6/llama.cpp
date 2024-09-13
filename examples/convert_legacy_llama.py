@@ -24,8 +24,9 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, IO, Iterable, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, IO, Iterable, Literal, TypeVar, Tuple
 
+import configparser
 import numpy as np
 
 if 'NO_LOCAL_GGUF' not in os.environ:
@@ -47,7 +48,7 @@ NDArray: TypeAlias = 'np.ndarray[Any, Any]'
 
 ARCH = gguf.MODEL_ARCH.LLAMA
 
-DEFAULT_CONCURRENCY = 8
+DEFAULT_CONCURRENCY = 16
 
 ADDED_TOKENS_FILE = 'added_tokens.json'
 FAST_TOKENIZER_FILE = 'tokenizer.json'
@@ -73,9 +74,10 @@ class UnquantizedDataType(DataType):
 
 
 DT_F16  = UnquantizedDataType('F16',  dtype = np.dtype(np.float16), valid_conversions = ['F32', 'Q8_0'])
-DT_F32  = UnquantizedDataType('F32',  dtype = np.dtype(np.float32), valid_conversions = ['F16', 'Q8_0'])
+DT_F32  = UnquantizedDataType('F32',  dtype = np.dtype(np.float32), valid_conversions = ['F16', 'Q8_0', 'I2'])
 DT_I32  = UnquantizedDataType('I32',  dtype = np.dtype(np.int16),   valid_conversions = [])
 DT_BF16 = UnquantizedDataType('BF16', dtype = np.dtype(np.uint16),  valid_conversions = ['F32', 'F16', 'Q8_0'])
+DT_I2   = UnquantizedDataType('I2',   dtype = np.dtype(np.uint8),   valid_conversions = ['F32', 'F16', 'Q8_0'])
 
 
 @dataclass(frozen=True)
@@ -118,7 +120,7 @@ DT_Q8_0 = Q8_0QuantizedDataType('Q8_0',
 
 # Quantized types skipped here because they may also map to np.float32
 NUMPY_TYPE_TO_DATA_TYPE: dict[np.dtype[Any], DataType] = {}
-for dt in (DT_BF16, DT_F16, DT_F32, DT_I32):
+for dt in (DT_BF16, DT_F16, DT_F32, DT_I32, DT_I2):
     if dt.dtype in NUMPY_TYPE_TO_DATA_TYPE:
         raise ValueError(f'Invalid duplicate data type {dt}')
     NUMPY_TYPE_TO_DATA_TYPE[dt.dtype] = dt
@@ -139,6 +141,7 @@ class GGMLFileType(enum.IntEnum):
     AllF32     = 0
     MostlyF16  = 1  # except 1d tensors
     MostlyQ8_0 = 7  # except 1d tensors
+    MostlyI2   = 132  # except 1d tensors
 
     def type_for_tensor(self, name: str, tensor: LazyTensor) -> DataType:
         dt = GGML_FILE_TYPE_TO_DATA_TYPE.get(self)
@@ -146,13 +149,17 @@ class GGMLFileType(enum.IntEnum):
             raise ValueError(self)
         # Convert all 1D tensors to F32.  Most of the codebase that takes in 1D tensors only handles F32 tensors, and most of the outputs tensors are F32.
         #  Also The 1d tensors aren't much of a performance/size issue.  So instead of having to have separate F32 and F16 implementations of both, just convert everything to F32 for now.
-        return dt if len(tensor.shape) > 1 else DT_F32
+        dt = dt if len(tensor.shape) > 1 else DT_F32
+        if name == "token_embd.weight" or name == "output.weight":
+            dt = DT_F32
+        return dt
 
 
 GGML_FILE_TYPE_TO_DATA_TYPE: dict[GGMLFileType, DataType] = {
     GGMLFileType.AllF32    : DT_F32,
     GGMLFileType.MostlyF16 : DT_F16,
     GGMLFileType.MostlyQ8_0: DT_Q8_0,
+    GGMLFileType.MostlyI2  : DT_I2,
 }
 
 #
@@ -381,18 +388,78 @@ def bf16_to_fp32(bf16_arr: np.ndarray[Any, np.dtype[np.uint16]]) -> NDArray:
     fp32_arr = bf16_arr.astype(np.uint32) << 16
     return fp32_arr.view(np.float32)
 
+def preprocess_weights(
+    w: np.ndarray,
+    bits = 2,
+    g    = 4,
+) -> Tuple[np.ndarray, np.ndarray]:
+    M, K = w.shape
+
+    cf=configparser.ConfigParser()
+    cf.read("./build/kcfg.ini")
+    secs=cf.sections()
+    for sec in secs:
+        sec_splits = str(sec).split('_')
+        if sec_splits[-4] == "m" + str(M*2) and sec_splits[-3] == "k" + str(K):
+            bm = int(cf.get(sec, 'bm'))
+            kfactor = int(cf.get(sec, 'kfactor'))
+            simd_n_in = int(cf.get(sec, 'simd_n_in'))
+            simd_n_out = int(cf.get(sec, 'simd_n_out'))
+            break    
+
+    M = M * bits
+    ngroups_per_elem = 8 // g
+
+    # (M // bits, K, bits)
+    w = np.stack([(w >> ib) & 1 for ib in range(bits)], axis=-1)
+    # print(w)
+    # (M // bits, K, bits) -> (M // bits, bits, K) -> (M // bits, bits, K) -> (M // bits, bits, K // g, g)
+    w = w.transpose(0, 2, 1).reshape(M // bits, bits, K // g, g)
+    w = sum([(w[:, :, :, ig] << ig) for ig in range(g)])
+    # print(w)
+    # 0, 16, 1, 17, 2, 18, 3, 19, 4, 20, 5, 21, 6, 22, 7, 23, 8, 24, 9, 25, 10, 26, 11, 27, 12, 28, 13, 29, 14, 30, 15, 31
+    # for bits=3
+    # bit0: [0, 8), bit1: [8, 16), bit2: [16, 24), bit0: [24, 32)
+    # (M // bits // simd_n_float16, bits, simd_n_float16, K // g)
+    w = w.reshape(M // bits // simd_n_out, simd_n_out, bits, K // g).transpose(0, 2, 1, 3)
+    mgroup = ngroups_per_elem * simd_n_in
+    w = w.reshape(M // mgroup, ngroups_per_elem, simd_n_in, K // g).transpose(0, 2, 1, 3)
+    #             0        1             2             3                 4                  5
+    w = w.reshape(M // bm, bm // mgroup, simd_n_in, ngroups_per_elem, K // g // kfactor, kfactor).transpose(0, 4, 1, 5, 2, 3)
+    w = sum([(w[:, :, :, :, :, ng] << (ng * g)) for ng in range(ngroups_per_elem)])
+    w = w.reshape(M // bm, K // g // kfactor, bm // mgroup, kfactor, simd_n_in)
+    # input size of current TVM API
+    w = w.reshape(M // bm, K // g, bm // ngroups_per_elem)
+
+    return w
+
+def transform_to_i2(x : NDArray):
+    x_num = np.prod(x.shape)
+    tile_x = np.reshape(x, x_num)
+    scale = 1
+    for i in range(x_num):
+        if tile_x[i] != 0:
+            scale = tile_x[i]
+            break
+    tile_x = np.divide(tile_x, scale)
+    tile_x = (tile_x.astype(np.int8) + 2).astype(np.uint8)
+    ans = np.reshape(tile_x, x.shape)
+    return ans, scale
 
 class UnquantizedTensor(Tensor):
-    def __init__(self, ndarray: NDArray):
+    def __init__(self, ndarray: NDArray, i2_scale: NDArray = None):
         assert isinstance(ndarray, np.ndarray)
         self.ndarray = ndarray
         self.data_type = NUMPY_TYPE_TO_DATA_TYPE[ndarray.dtype]
+        self.i2_scale = i2_scale
 
     def astype(self, data_type: DataType) -> UnquantizedTensor:
         dtype = data_type.dtype
         if self.data_type == DT_BF16:
             self.ndarray = bf16_to_fp32(self.ndarray)
-        return UnquantizedTensor(self.ndarray.astype(dtype))
+        if dtype == np.uint8:
+            self.ndarray, self.i2_scale = transform_to_i2(self.ndarray)
+        return UnquantizedTensor(self.ndarray.astype(dtype), self.i2_scale)
 
     def to_ggml(self) -> Self:
         return self
@@ -930,6 +997,17 @@ class OutputFile:
         raw_dtype = getattr(tensor.data_type, 'ggml_type', None)
         data_type = getattr(tensor.data_type, 'quantized_type', None) or tensor.data_type.dtype
         data_nbytes = tensor.data_type.elements_to_bytes(n_elements)
+        if tensor.data_type.name == "I2":
+            # i2 * n + scale (fp32)
+            # print(tensor.shape)
+            # print(data_nbytes)
+            data_nbytes = data_nbytes // 4 + 32
+            # print(data_nbytes)
+            # scale_name = name.replace('.weight', '_scale.weight')
+            # scale_shape = [1]
+            # scale_data_type = np.float32
+            # scale_nbytes = 4
+            # self.gguf.add_tensor_info(scale_name, scale_shape, scale_data_type, scale_nbytes, raw_dtype=None)
         self.gguf.add_tensor_info(name, tensor.shape, data_type, data_nbytes, raw_dtype=raw_dtype)
 
     def write_meta(self) -> None:
@@ -951,13 +1029,20 @@ class OutputFile:
 
         start = time.time()
         for i, ((name, lazy_tensor), ndarray) in enumerate(zip(model.items(), ndarrays)):
+            ndarray, i2_scale = ndarray
             elapsed = time.time() - start
             size = ' x '.join(f"{dim:6d}" for dim in lazy_tensor.shape)
             padi = len(str(len(model)))
             logger.info(
                 f"[{i + 1:{padi}d}/{len(model)}] Writing tensor {name:38s} | size {size:16} | type {lazy_tensor.data_type.name:4} | T+{int(elapsed):4}"
             )
-            self.gguf.write_tensor_data(ndarray)
+            if i2_scale is not None:
+                i2_scale = np.tile(i2_scale, 8)
+                ndarray = preprocess_weights(ndarray)
+                self.gguf.write_tensor_data(ndarray)
+                self.gguf.write_tensor_data(i2_scale)
+            else:
+                self.gguf.write_tensor_data(ndarray)
 
     def close(self) -> None:
         self.gguf.close()
@@ -985,13 +1070,13 @@ class OutputFile:
     def do_item(item: tuple[str, LazyTensor]) -> tuple[DataType, NDArray]:
         name, lazy_tensor = item
         tensor = lazy_tensor.load().to_ggml()
-        return (lazy_tensor.data_type, tensor.ndarray)
+        return (lazy_tensor.data_type, tensor.ndarray, tensor.i2_scale)
 
     @staticmethod
     def maybe_do_quantize(item: tuple[DataType, NDArray]) -> NDArray:
-        dt, arr = item
+        dt, arr, i2_scale = item
         if not isinstance(dt, QuantizedDataType):
-            return arr
+            return arr, i2_scale
         return dt.quantize(arr)
 
     @staticmethod
@@ -1036,6 +1121,8 @@ def pick_output_type(model: LazyModel, output_type_str: str | None) -> GGMLFileT
         return GGMLFileType.MostlyF16
     if output_type_str == "q8_0":
         return GGMLFileType.MostlyQ8_0
+    if output_type_str == "i2":
+        return GGMLFileType.MostlyI2
 
     name_to_type = {name: lazy_tensor.data_type for (name, lazy_tensor) in model.items()}
 
@@ -1176,7 +1263,7 @@ def load_some_model(path: Path) -> ModelPlus:
     # Be extra-friendly and accept either a file or a directory:
     if path.is_dir():
         # Check if it's a set of safetensors files first
-        globs = ["model-00001-of-*.safetensors", "model.safetensors", "consolidated.safetensors"]
+        globs = ["model-00001-of-*.safetensors", "model.safetensors", "consolidated.safetensors", "model-int2.pth"]
         files = [file for glob in globs for file in path.glob(glob)]
         if not files:
             # Try the PyTorch patterns too, with lower priority
@@ -1260,6 +1347,7 @@ def default_convention_outfile(file_type: GGMLFileType, expert_count: int | None
         GGMLFileType.AllF32:    "F32",
         GGMLFileType.MostlyF16: "F16",
         GGMLFileType.MostlyQ8_0: "Q8_0",
+        GGMLFileType.MostlyI2:  "i2",
     }[file_type]
 
     return gguf.naming_convention(name, basename, finetune, version, size_label, output_type)
@@ -1285,7 +1373,7 @@ def do_dump_model(model_plus: ModelPlus) -> None:
 
 
 def main(args_in: list[str] | None = None) -> None:
-    output_choices = ["f32", "f16"]
+    output_choices = ["f32", "f16", "i2"]
     if np.uint32(1) == np.uint32(1).newbyteorder("<"):
         # We currently only support Q8_0 output on little endian systems.
         output_choices.append("q8_0")
@@ -1376,6 +1464,7 @@ def main(args_in: list[str] | None = None) -> None:
                 "f32": GGMLFileType.AllF32,
                 "f16": GGMLFileType.MostlyF16,
                 "q8_0": GGMLFileType.MostlyQ8_0,
+                "i2" : GGMLFileType.MostlyI2,
             }[args.outtype]
 
         logger.info(f"params = {params}")

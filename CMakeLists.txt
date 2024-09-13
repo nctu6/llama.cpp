@@ -69,6 +69,9 @@ option(LLAMA_BUILD_SERVER   "llama: build server example" ${LLAMA_STANDALONE})
 
 # 3rd party libs
 option(LLAMA_CURL "llama: use libcurl to download model from an URL" OFF)
+option(LLAMA_TMAC                            "llama: use TMAC"                                  OFF)
+option(LLAMA_TMAC_SYSLIB                     "llama: use TMAC system library"                   OFF)
+option(LLAMA_TMAC_TVM_THREADPOOL             "llama: use TVM threadpool for TMAC"               OFF)
 
 # Required for relocatable CMake package
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-info.cmake)
